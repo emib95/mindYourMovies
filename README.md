@@ -154,3 +154,8 @@ Response:
   "tmdb_id": 123
 }
 ```
+
+## Research notes
+
+- [Direct streaming provider links](docs/provider-links-research.md): options
+  for replacing TMDb watch-page links with Netflix/Disney+/other provider links.
