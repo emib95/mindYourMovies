@@ -127,6 +127,7 @@ Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
 | Issue                         | Fix                                                        |
 | ----------------------------- | ---------------------------------------------------------- |
 | Blank white frontend page     | Publish the built output (`frontend/dist`), not raw `frontend` |
+| `_redirects` infinite loop    | Use Wrangler's SPA fallback; do not deploy a catch-all `_redirects` rule |
 | CORS error in browser         | Add the frontend URL to `ALLOWED_ORIGINS` on Railway       |
 | Frontend calls `localhost`    | Set `VITE_API_BASE_URL` in Cloudflare and redeploy         |
 | `api` subdomain SSL fails     | Disable Cloudflare proxy (grey cloud) on the `api` CNAME   |
