@@ -1,0 +1,142 @@
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 56px 28px;
+  text-align: left;
+}
+
+.hero {
+  max-width: 760px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.hero-copy {
+  color: var(--text);
+  font-size: 1.1rem;
+  max-width: 680px;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+form {
+  display: grid;
+  gap: 24px;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+legend,
+.field span {
+  color: var(--text-h);
+  display: block;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.provider-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.provider-card {
+  align-items: center;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+}
+
+.field input,
+.field textarea {
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-sizing: border-box;
+  color: var(--text-h);
+  font: inherit;
+  padding: 14px 16px;
+  width: 100%;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+button,
+.recommendation a {
+  align-items: center;
+  background: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 700;
+  justify-content: center;
+  padding: 14px 22px;
+  text-decoration: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.message {
+  margin-top: 20px;
+}
+
+.error {
+  color: #d92d20;
+}
+
+.recommendation {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 24px;
+  margin-top: 28px;
+  padding: 24px;
+}
+
+.recommendation h2 {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.recommendation p:not(.eyebrow) {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 36px 18px;
+  }
+
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,1 @@
+"""MindYourMovies FastAPI application package."""
