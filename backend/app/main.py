@@ -23,6 +23,15 @@ tmdb_client = TMDbClient(settings)
 recommendation_engine = RecommendationEngine(settings)
 
 
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "name": settings.app_name,
+        "health": "/health",
+        "recommendations": "POST /api/recommendations",
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}

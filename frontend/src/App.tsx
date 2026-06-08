@@ -19,7 +19,9 @@ const providers: Array<{ id: ProviderId; label: string }> = [
   { id: 'hbo', label: 'HBO / NOW' },
 ]
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const apiBaseUrl = (
+  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+).replace(/\/+$/, '')
 
 function App() {
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
@@ -69,7 +71,13 @@ function App() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
-        throw new Error(payload?.detail ?? 'Could not get a recommendation.')
+        const detail = payload?.detail
+        const message = Array.isArray(detail)
+          ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(' ')
+          : typeof detail === 'string'
+            ? detail
+            : null
+        throw new Error(message ?? 'Could not get a recommendation.')
       }
 
       setRecommendation(await response.json())

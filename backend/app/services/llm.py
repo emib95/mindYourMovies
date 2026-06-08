@@ -1,6 +1,6 @@
 import json
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.config import Settings
 from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
@@ -22,33 +22,36 @@ class RecommendationEngine:
             return self._fallback_recommendation(recommendation_request, candidates)
 
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
-        response = await client.chat.completions.create(
-            model=self.settings.openai_model,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You help people stop scrolling and pick one movie. "
-                        "Choose exactly one title from the candidate list. "
-                        "Return JSON only with movie_title, provider, watch_link, and reason. "
-                        "Do not invent titles or links."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "region": self.settings.tmdb_region,
-                            "user_answers": recommendation_request.model_dump(mode="json"),
-                            "candidates": [
-                                candidate.model_dump(mode="json") for candidate in candidates
-                            ],
-                        }
-                    ),
-                },
-            ],
-        )
+        try:
+            response = await client.chat.completions.create(
+                model=self.settings.openai_model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You help people stop scrolling and pick one movie. "
+                            "Choose exactly one title from the candidate list. "
+                            "Return JSON only with movie_title, provider, watch_link, and reason. "
+                            "Do not invent titles or links."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "region": self.settings.tmdb_region,
+                                "user_answers": recommendation_request.model_dump(mode="json"),
+                                "candidates": [
+                                    candidate.model_dump(mode="json") for candidate in candidates
+                                ],
+                            }
+                        ),
+                    },
+                ],
+            )
+        except OpenAIError:
+            return self._fallback_recommendation(recommendation_request, candidates)
 
         content = response.choices[0].message.content or "{}"
         try:

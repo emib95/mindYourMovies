@@ -63,6 +63,73 @@ npm run dev
 The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
 `http://localhost:8000`.
 
+## Deploy
+
+Production uses **Cloudflare Pages** (frontend) and **Railway** (backend).
+Pushes to `main` auto-deploy both via their GitHub integrations. GitHub Actions
+(`.github/workflows/ci.yml`) verifies builds on pull requests.
+
+| Service  | URL                              | Host      |
+| -------- | -------------------------------- | --------- |
+| Frontend | `https://mindyourmovies.com`     | Cloudflare Pages |
+| Backend  | `https://api.mindyourmovies.com` | Railway   |
+
+### Prerequisites
+
+- Code merged on `main`
+- Domain `mindyourmovies.com` on Cloudflare (DNS managed there)
+
+### Backend (Railway)
+
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
+2. **Settings → Root Directory:** `backend`
+3. **Variables:**
+
+```env
+ALLOWED_ORIGINS=["https://mindyourmovies.com","https://www.mindyourmovies.com"]
+TMDB_API_KEY=<your key>
+OPENAI_API_KEY=<your key>
+TMDB_REGION=GB
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+4. **Settings → Networking → Custom Domain:** `api.mindyourmovies.com`
+5. In Cloudflare DNS, add a **CNAME** for `api` pointing at Railway's target.
+   Set proxy to **DNS only** (grey cloud).
+6. Verify: `curl https://api.mindyourmovies.com/health` → `{"status":"ok"}`
+
+`backend/railway.toml` sets the start command and health check.
+
+### Frontend (Cloudflare Pages)
+
+1. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
+2. Build settings:
+
+| Setting              | Value           |
+| -------------------- | --------------- |
+| Production branch    | `main`          |
+| Root directory       | `frontend`      |
+| Build command        | `npm run build` |
+| Build output         | `dist`          |
+
+3. **Environment variables → Production:**
+
+```env
+VITE_API_BASE_URL=https://api.mindyourmovies.com
+```
+
+4. **Custom domains:** `mindyourmovies.com` and `www.mindyourmovies.com`
+
+Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
+
+### Troubleshooting
+
+| Issue                         | Fix                                                        |
+| ----------------------------- | ---------------------------------------------------------- |
+| CORS error in browser         | Add the frontend URL to `ALLOWED_ORIGINS` on Railway       |
+| Frontend calls `localhost`    | Set `VITE_API_BASE_URL` in Cloudflare and redeploy         |
+| `api` subdomain SSL fails     | Disable Cloudflare proxy (grey cloud) on the `api` CNAME   |
+
 ## API
 
 `POST /api/recommendations`
