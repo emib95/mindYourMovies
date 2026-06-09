@@ -20,10 +20,12 @@ The server starts on `http://localhost:8000`.
 - `TMDB_API_KEY`: TMDb key for `/discover/movie`.
 - `TMDB_REGION`: fallback TMDb watch region, defaults to `GB`.
 - `TMDB_MIN_VOTE_AVERAGE`: minimum TMDb user rating for candidates, defaults to
-  `6.5`.
+  `7.0`.
 - `TMDB_MIN_VOTE_COUNT`: minimum number of TMDb votes for candidates, defaults
-  to `50`. This is used as the audience-size signal because TMDb does not expose
+  to `500`. This is used as the audience-size signal because TMDb does not expose
   raw per-movie view counts.
+- `TMDB_CANDIDATE_LIMIT`: maximum number of ranked candidates sent to the LLM,
+  defaulting to `60`.
 - `GEOLOCATION_API_URL`: optional IP geolocation endpoint template. Defaults to
   `https://ipwho.is/{ip}?fields=success,country_code`.
 - `OPENAI_API_KEY`: optional for local development; without it, a deterministic
@@ -38,4 +40,6 @@ their public IP address, then falls back to `TMDB_REGION`.
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
-paid rentals or purchases. It returns one movie title and one watch link.
+paid rentals or purchases. The backend uses title/reference searches, similar
+movies, classic-aware discovery, and provider availability to build a ranked
+candidate list before asking the LLM to choose one movie.

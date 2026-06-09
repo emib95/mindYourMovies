@@ -26,6 +26,26 @@ FALLBACK_WHY_RECOMMENDED = {
         "mejor coincidencia con el ambiente, el grupo y las notas que compartiste."
     ),
 }
+CLASSIC_INTENT_TERMS = (
+    "classic",
+    "classics",
+    "cinema classic",
+    "movie classic",
+    "film classic",
+    "masterpiece",
+    "masterpieces",
+    "old hollywood",
+    "golden age",
+    "timeless",
+    "canonical",
+    "canon",
+    "acclaimed",
+    "obra maestra",
+    "clasico",
+    "clasicos",
+    "cine clasico",
+    "pelicula clasica",
+)
 
 
 class RecommendationEngine:
@@ -54,7 +74,13 @@ class RecommendationEngine:
                         "content": (
                             "You help people stop scrolling and pick one movie. "
                             "Choose exactly one title from the candidate list. "
+                            "If the user names a specific title and that title is in the "
+                            "candidate list, strongly prefer it. If the named title is not "
+                            "available, choose a candidate with a close tonal, genre, era, "
+                            "or reputation match. "
                             "Favor well-rated candidates with stronger vote counts and popularity. "
+                            "For classic, masterpiece, or cinema-canon requests, prioritize "
+                            "older, highly rated, widely voted films over new releases. "
                             "Respect the user's allow_extra_costs preference when explaining the choice. "
                             "Return JSON only with movie_title, provider, watch_link, reason, "
                             "and why_recommended. Use reason as a short summary. "
@@ -152,13 +178,21 @@ class RecommendationEngine:
             if part
         ).lower()
 
-        def score(candidate: MovieCandidate) -> tuple[int, float, int, float]:
+        has_classic_intent = self._has_classic_intent(query)
+
+        def score(candidate: MovieCandidate) -> tuple[int, int, float, int, float]:
             searchable = f"{candidate.title} {candidate.overview}".lower()
             keyword_score = sum(1 for word in query.split() if word in searchable)
+            classic_score = int(
+                has_classic_intent
+                and candidate.release_year is not None
+                and self._release_year(candidate.release_year) is not None
+                and self._release_year(candidate.release_year) <= 2000
+            )
             rating = candidate.rating or 0
             vote_count = candidate.vote_count or 0
             popularity = candidate.popularity or 0
-            return keyword_score, rating, vote_count, popularity
+            return keyword_score, classic_score, rating, vote_count, popularity
 
         return max(candidates, key=score)
 
@@ -180,3 +214,12 @@ class RecommendationEngine:
 
     def _region(self, recommendation_request: RecommendationRequest) -> str:
         return recommendation_request.region or self.settings.tmdb_region.upper()
+
+    def _has_classic_intent(self, query: str) -> bool:
+        return any(term in query for term in CLASSIC_INTENT_TERMS)
+
+    def _release_year(self, release_year: str) -> int | None:
+        try:
+            return int(release_year)
+        except ValueError:
+            return None

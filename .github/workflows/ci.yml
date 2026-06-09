@@ -20,6 +20,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -c "from app.main import app"
+      - run: python -m unittest discover -s tests
 
   frontend:
     runs-on: ubuntu-latest
