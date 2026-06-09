@@ -17,6 +17,12 @@ class ProviderConfig:
     tmdb_ids: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class ReferenceCandidateResult:
+    candidates: list[MovieCandidate]
+    excluded_seed_id: int | None = None
+
+
 PROVIDER_CONFIG: dict[Provider, ProviderConfig] = {
     Provider.netflix: ProviderConfig("Netflix", (8,)),
     Provider.disney: ProviderConfig("Disney+", (337,)),
@@ -112,13 +118,19 @@ GENERIC_REFERENCE_WORDS = {
     "visually",
     "watch",
 }
-REFERENCE_PATTERNS = (
-    r"\blike\s+([^,.;:\n]+)",
-    r"\bsimilar to\s+([^,.;:\n]+)",
-    r"\bin the mood for\s+([^,.;:\n]+)",
-    r"\bcomo\s+([^,.;:\n]+)",
+SIMILARITY_REFERENCE_PATTERNS = (
+    r"\bsimilar(?:\s+(?:movie|film|movies|films))?\s+to\s+([^,.;:\n]+)",
+    r"\b(?:something|anything|movie|film|movies|films|one)\s+like\s+([^,.;:\n]+)",
+    r"\bin the (?:same )?(?:vein|style|mood|vibe) as\s+([^,.;:\n]+)",
+    r"\balong the lines of\s+([^,.;:\n]+)",
     r"\bparecida a\s+([^,.;:\n]+)",
     r"\bparecido a\s+([^,.;:\n]+)",
+)
+REFERENCE_PATTERNS = (
+    *SIMILARITY_REFERENCE_PATTERNS,
+    r"\blike\s+([^,.;:\n]+)",
+    r"\bin the mood for\s+([^,.;:\n]+)",
+    r"\bcomo\s+([^,.;:\n]+)",
 )
 
 
@@ -186,21 +198,28 @@ class TMDbClient:
         language = self._language(recommendation_request, region)
         candidate_limit = self._candidate_limit()
         candidates: list[MovieCandidate] = []
+        similarity_reference_queries = {
+            self._normalized_text(query)
+            for query in self._similarity_reference_queries(recommendation_request)
+        }
+        excluded_reference_ids: set[int] = set()
 
         async with httpx.AsyncClient(timeout=12) as client:
             for query in self._reference_queries(recommendation_request)[
                 :MAX_REFERENCE_QUERIES
             ]:
-                candidates.extend(
-                    await self._reference_candidates(
-                        client,
-                        query,
-                        recommendation_request,
-                        region,
-                        provider_ids,
-                        language,
-                    )
+                reference_result = await self._reference_candidates(
+                    client,
+                    query,
+                    recommendation_request,
+                    region,
+                    provider_ids,
+                    language,
+                    self._normalized_text(query) in similarity_reference_queries,
                 )
+                candidates.extend(reference_result.candidates)
+                if reference_result.excluded_seed_id is not None:
+                    excluded_reference_ids.add(reference_result.excluded_seed_id)
 
             candidates.extend(
                 await self._discover_candidates(
@@ -217,6 +236,7 @@ class TMDbClient:
             candidates,
             recommendation_request,
             candidate_limit,
+            excluded_reference_ids,
         )
 
     async def _reference_candidates(
@@ -227,7 +247,8 @@ class TMDbClient:
         region: str,
         provider_ids: Sequence[int],
         language: str,
-    ) -> list[MovieCandidate]:
+        exclude_seed: bool,
+    ) -> ReferenceCandidateResult:
         search_payload = await self._get_json(
             client,
             "/search/movie",
@@ -240,13 +261,13 @@ class TMDbClient:
         )
         seed = self._best_reference_seed(search_payload.get("results", []), query)
         if seed is None:
-            return []
+            return ReferenceCandidateResult([])
 
         seed_id = seed.get("id")
         if not seed_id:
-            return []
+            return ReferenceCandidateResult([])
 
-        related_movies: list[dict] = [seed]
+        related_movies: list[dict] = [] if exclude_seed else [seed]
         for relation in ("recommendations", "similar"):
             payload = await self._get_json(
                 client,
@@ -258,12 +279,15 @@ class TMDbClient:
             )
             related_movies.extend(payload.get("results", []))
 
-        return await self._available_candidates_from_movies(
-            client,
-            related_movies[:MAX_REFERENCE_RELATED_MOVIES],
-            recommendation_request,
-            region,
-            provider_ids,
+        return ReferenceCandidateResult(
+            await self._available_candidates_from_movies(
+                client,
+                related_movies[:MAX_REFERENCE_RELATED_MOVIES],
+                recommendation_request,
+                region,
+                provider_ids,
+            ),
+            int(seed_id) if exclude_seed else None,
         )
 
     async def _discover_candidates(
@@ -445,8 +469,19 @@ class TMDbClient:
         candidates: Sequence[MovieCandidate],
         recommendation_request: RecommendationRequest,
         limit: int,
+        excluded_tmdb_ids: Iterable[int] = (),
     ) -> list[MovieCandidate]:
-        deduped_candidates = self._dedupe_candidates(candidates)
+        excluded_ids = set(excluded_tmdb_ids)
+        excluded_titles = {
+            self._normalized_text(query)
+            for query in self._similarity_reference_queries(recommendation_request)
+        }
+        deduped_candidates = [
+            candidate
+            for candidate in self._dedupe_candidates(candidates)
+            if candidate.tmdb_id not in excluded_ids
+            and self._normalized_text(candidate.title) not in excluded_titles
+        ]
         return sorted(
             deduped_candidates,
             key=lambda candidate: self._candidate_score(
@@ -606,6 +641,24 @@ class TMDbClient:
         if self._looks_like_title_reference(first_clause):
             candidates.append(first_clause)
 
+        return self._clean_reference_queries(candidates)
+
+    def _similarity_reference_queries(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> list[str]:
+        candidates: list[str] = []
+        text = self._request_text(recommendation_request)
+
+        for pattern in SIMILARITY_REFERENCE_PATTERNS:
+            candidates.extend(
+                match.group(1)
+                for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+            )
+
+        return self._clean_reference_queries(candidates)
+
+    def _clean_reference_queries(self, candidates: Iterable[str]) -> list[str]:
         return list(
             dict.fromkeys(
                 cleaned
@@ -642,12 +695,19 @@ class TMDbClient:
 
     def _clean_reference_query(self, value: str) -> str:
         cleaned = re.sub(
-            r"\b(with|for|but|and|that|which|please|tonight)\b.*$",
+            r"^(?:let'?s\s+say(?:\s+for\s+(?:instance|example))?|"
+            r"for\s+(?:instance|example)|say)\s+",
             "",
             value.strip(),
             flags=re.IGNORECASE,
         )
-        cleaned = cleaned.strip(" \"'()[]{}")
+        cleaned = re.sub(
+            r"\b(with|for|but|and|that|which|please|tonight)\b.*$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = cleaned.strip(" \"'()[]{}!?")
         if len(cleaned) < 2 or len(cleaned) > 80:
             return ""
         return cleaned
