@@ -72,7 +72,10 @@ The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
 
 To enable the small "Buy me a coffee" support section, set
 `VITE_DONATION_URL` to a Stripe Payment Link URL. If this value is empty, the
-section remains visible but does not show a clickable donation button.
+section remains visible but does not show a clickable donation button. The
+creator photo in that section defaults to `/emilio-banqueri.jpg`; place the
+photo in `frontend/public/emilio-banqueri.jpg` or set `VITE_CREATOR_PHOTO_URL`
+to another hosted image URL.
 
 ## Deploy
 
@@ -128,6 +131,7 @@ OPENAI_MODEL=gpt-4.1-mini
 ```env
 VITE_API_BASE_URL=https://api.mindyourmovies.com
 VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
+VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 ```
 
 4. **Custom domains:** `mindyourmovies.com` and `www.mindyourmovies.com`
@@ -148,11 +152,15 @@ stored in the frontend or backend.
 
 ```env
 VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
+VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 ```
 
-6. For production, add the same `VITE_DONATION_URL` value in Cloudflare Pages
-   under **Settings -> Environment variables -> Production**, then rebuild the
-   frontend. Vite bakes this value into the deployed site at build time.
+6. Save the creator photo as `frontend/public/emilio-banqueri.jpg`, or set
+   `VITE_CREATOR_PHOTO_URL` to another public image URL.
+7. For production, add the same `VITE_DONATION_URL` and
+   `VITE_CREATOR_PHOTO_URL` values in Cloudflare Pages under
+   **Settings -> Environment variables -> Production**, then rebuild the
+   frontend. Vite bakes these values into the deployed site at build time.
 
 ### Troubleshooting
 

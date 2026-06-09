@@ -274,22 +274,50 @@ button:disabled {
   padding-top: 8px;
 }
 
-.donation-section div {
-  max-width: 620px;
+.creator-card {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.creator-photo {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  flex: 0 0 auto;
+  height: 96px;
+  object-fit: cover;
+  width: 96px;
+}
+
+.creator-copy {
+  display: grid;
+  gap: 8px;
 }
 
 .donation-section .eyebrow {
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .donation-section h2 {
-  margin-bottom: 8px;
+  margin-bottom: 0;
+}
+
+.creator-name {
+  color: var(--text-h);
+  font-weight: 700;
 }
 
 .donation-section a {
   background: transparent;
   border: 1px solid var(--accent-border);
   color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.donation-action {
   flex: 0 0 auto;
 }
 
@@ -339,5 +367,15 @@ button:disabled {
   .donation-section {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .creator-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .creator-photo {
+    height: 84px;
+    width: 84px;
   }
 }

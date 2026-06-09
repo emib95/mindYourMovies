@@ -59,6 +59,9 @@ const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 ).replace(/\/+$/, '')
 const donationUrl = (import.meta.env.VITE_DONATION_URL ?? '').trim()
+const creatorPhotoUrl = (
+  import.meta.env.VITE_CREATOR_PHOTO_URL ?? '/emilio-banqueri.jpg'
+).trim()
 
 const translations = {
   en: {
@@ -127,6 +130,10 @@ const translations = {
     donationCta: 'Donate with Stripe',
     donationUnavailable:
       'Donations will be available once a Stripe payment link is configured.',
+    creatorName: 'Emilio Banqueri',
+    creatorBio:
+      'I am Emilio Banqueri, a developer who wants technology to actually support our wellbeing. I built this because mindless scrolling and too many choices can quietly weigh on our mental health.',
+    creatorPhotoAlt: 'Emilio Banqueri',
     errors: {
       recommendation: 'Could not get a recommendation.',
       generic: 'Something went wrong while choosing a movie.',
@@ -198,6 +205,10 @@ const translations = {
     donationCta: 'Donar con Stripe',
     donationUnavailable:
       'Las donaciones estaran disponibles cuando se configure un enlace de pago de Stripe.',
+    creatorName: 'Emilio Banqueri',
+    creatorBio:
+      'Soy Emilio Banqueri, un desarrollador que quiere que la tecnologia realmente apoye nuestro bienestar. Cree esto porque el scroll automatico y demasiadas opciones pueden afectar silenciosamente nuestra salud mental.',
+    creatorPhotoAlt: 'Emilio Banqueri',
     errors: {
       recommendation: 'No se pudo obtener una recomendacion.',
       generic: 'Algo salio mal al elegir una pelicula.',
@@ -250,6 +261,9 @@ function App() {
   )
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showCreatorPhoto, setShowCreatorPhoto] = useState(
+    Boolean(creatorPhotoUrl),
+  )
   const hasManualRegion = useRef(false)
   const hasManualLanguage = useRef(initialRouteLanguage === 'es')
   const t = translations[language]
@@ -551,18 +565,32 @@ function App() {
       </section>
 
       <section className="donation-section" aria-labelledby="donation-title">
-        <div>
-          <p className="eyebrow">{t.donationEyebrow}</p>
-          <h2 id="donation-title">{t.donationTitle}</h2>
-          <p>{t.donationCopy}</p>
+        <div className="creator-card">
+          {showCreatorPhoto ? (
+            <img
+              alt={t.creatorPhotoAlt}
+              className="creator-photo"
+              onError={() => setShowCreatorPhoto(false)}
+              src={creatorPhotoUrl}
+            />
+          ) : null}
+          <div className="creator-copy">
+            <p className="eyebrow">{t.donationEyebrow}</p>
+            <h2 id="donation-title">{t.donationTitle}</h2>
+            <p className="creator-name">{t.creatorName}</p>
+            <p>{t.creatorBio}</p>
+            <p>{t.donationCopy}</p>
+          </div>
         </div>
-        {donationUrl ? (
-          <a href={donationUrl} rel="noreferrer" target="_blank">
-            {t.donationCta}
-          </a>
-        ) : (
-          <span className="donation-muted">{t.donationUnavailable}</span>
-        )}
+        <div className="donation-action">
+          {donationUrl ? (
+            <a href={donationUrl} rel="noreferrer" target="_blank">
+              {t.donationCta}
+            </a>
+          ) : (
+            <span className="donation-muted">{t.donationUnavailable}</span>
+          )}
+        </div>
       </section>
     </main>
   )
