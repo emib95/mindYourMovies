@@ -6,6 +6,82 @@
   text-align: left;
 }
 
+.top-controls {
+  align-items: flex-start;
+  align-self: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.language-switcher {
+  align-items: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.language-option {
+  align-items: center;
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  font-weight: 700;
+  gap: 8px;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.language-option.is-active {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.language-flag {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.location-control {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 6px;
+  max-width: 430px;
+  padding: 12px 14px;
+}
+
+.location-label {
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.location-message {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.location-control select {
+  appearance: none;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-h);
+  font: inherit;
+  padding: 10px 14px;
+}
+
 .hero {
   display: grid;
   gap: 20px;
@@ -46,12 +122,6 @@
 form {
   display: grid;
   gap: 24px;
-}
-
-.locale-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 fieldset {
@@ -206,11 +276,26 @@ button:disabled {
     margin-bottom: 0;
   }
 
-  .provider-grid {
-    grid-template-columns: 1fr;
+  .top-controls {
+    align-self: stretch;
+    justify-content: flex-start;
   }
 
-  .locale-grid {
+  .language-switcher,
+  .location-control {
+    width: 100%;
+  }
+
+  .language-switcher {
+    justify-content: space-between;
+  }
+
+  .language-option {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .provider-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -1,11 +1,11 @@
 import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, MouseEvent } from 'react'
 import mindTheMovieLogo from './assets/mind-the-movie.svg'
 
 type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
 type Language = 'en' | 'es'
-type LocationStatus = 'detecting' | 'detected' | 'default' | 'error'
+type LocationStatus = 'detecting' | 'detected' | 'default' | 'error' | 'manual'
 
 type Recommendation = {
   movie_title: string
@@ -29,6 +29,11 @@ const providers: Array<{ id: ProviderId; label: string }> = [
   { id: 'prime', label: 'Prime Video' },
   { id: 'youtube', label: 'YouTube' },
   { id: 'hbo', label: 'HBO / NOW' },
+]
+
+const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
+  { id: 'en', flag: '🇬🇧', path: '/' },
+  { id: 'es', flag: '🇪🇸', path: '/es' },
 ]
 
 const regionOptions = [
@@ -57,18 +62,24 @@ const apiBaseUrl = (
 const translations = {
   en: {
     appAlt: 'Mind the Movie',
+    languageSwitcherLabel: 'Choose language',
     title: 'Stop scrolling. Pick one movie.',
     intro:
       'Tell us which providers you can use and what everyone feels like watching. We will suggest one movie with a simple way to start it.',
     languageLabel: 'Language',
+    locationLabel: 'Detected location',
+    changeLocationLabel: 'Change availability country',
     regionLabel: 'Availability country',
     regionHelp: {
       detecting: 'Detecting your country from your IP address...',
-      detected: (country: string) => `Using availability for ${country}.`,
+      detected: (country: string) =>
+        `Detected location is ${country}. You can change it here.`,
       default: (country: string) =>
-        `Using ${country} as a fallback. You can change it before asking.`,
+        `Using ${country} as a fallback. You can change it here.`,
       error: (country: string) =>
-        `Could not detect your country, so ${country} is selected for now.`,
+        `Could not detect your country, so ${country} is selected for now. You can change it here.`,
+      manual: (country: string) =>
+        `Using availability for ${country}. You can change it here.`,
     },
     languages: {
       en: 'English',
@@ -115,18 +126,24 @@ const translations = {
   },
   es: {
     appAlt: 'Mind the Movie',
+    languageSwitcherLabel: 'Elegir idioma',
     title: 'Deja de buscar. Elige una pelicula.',
     intro:
       'Dinos que plataformas puedes usar y que les apetece ver. Te sugeriremos una pelicula con una forma sencilla de empezar.',
     languageLabel: 'Idioma',
+    locationLabel: 'Ubicacion detectada',
+    changeLocationLabel: 'Cambiar pais de disponibilidad',
     regionLabel: 'Pais de disponibilidad',
     regionHelp: {
       detecting: 'Detectando tu pais por tu direccion IP...',
-      detected: (country: string) => `Usando la disponibilidad de ${country}.`,
+      detected: (country: string) =>
+        `Ubicacion detectada: ${country}. Puedes cambiarla aqui.`,
       default: (country: string) =>
-        `Usando ${country} como opcion inicial. Puedes cambiarlo antes de pedir una recomendacion.`,
+        `Usando ${country} como opcion inicial. Puedes cambiarla aqui.`,
       error: (country: string) =>
-        `No pudimos detectar tu pais, asi que ${country} esta seleccionado por ahora.`,
+        `No pudimos detectar tu pais, asi que ${country} esta seleccionado por ahora. Puedes cambiarlo aqui.`,
+      manual: (country: string) =>
+        `Usando la disponibilidad de ${country}. Puedes cambiarla aqui.`,
     },
     languages: {
       en: 'Ingles',
@@ -173,14 +190,39 @@ const translations = {
   },
 }
 
-const browserLanguage = (): Language =>
-  navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en'
+const languageFromPath = (pathname = window.location.pathname): Language => {
+  const normalizedPath = pathname.toLowerCase().replace(/\/+$/, '') || '/'
+  return normalizedPath === '/es' || normalizedPath.startsWith('/es/')
+    ? 'es'
+    : 'en'
+}
+
+const updateLanguageRoute = (
+  newLanguage: Language,
+  mode: 'push' | 'replace' = 'push',
+) => {
+  const nextPath =
+    languageOptions.find((option) => option.id === newLanguage)?.path ?? '/'
+  const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`
+
+  if (window.location.pathname === nextPath) {
+    return
+  }
+
+  if (mode === 'replace') {
+    window.history.replaceState(null, '', nextUrl)
+    return
+  }
+
+  window.history.pushState(null, '', nextUrl)
+}
 
 function App() {
+  const initialRouteLanguage = languageFromPath()
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
     'netflix',
   ])
-  const [language, setLanguage] = useState<Language>(browserLanguage)
+  const [language, setLanguage] = useState<Language>(initialRouteLanguage)
   const [region, setRegion] = useState('GB')
   const [locationStatus, setLocationStatus] =
     useState<LocationStatus>('detecting')
@@ -194,7 +236,24 @@ function App() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const hasManualRegion = useRef(false)
+  const hasManualLanguage = useRef(initialRouteLanguage === 'es')
   const t = translations[language]
+
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
+
+  useEffect(() => {
+    const syncLanguageFromRoute = () => {
+      hasManualLanguage.current = true
+      setLanguage(languageFromPath())
+    }
+
+    window.addEventListener('popstate', syncLanguageFromRoute)
+    return () => {
+      window.removeEventListener('popstate', syncLanguageFromRoute)
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -216,10 +275,18 @@ function App() {
           return
         }
 
-        if (!hasManualRegion.current) {
+        if (hasManualRegion.current) {
+          setLocationStatus('manual')
+        } else {
           setRegion(detectedRegion)
+          setLocationStatus(payload.detected ? 'detected' : 'default')
         }
-        setLocationStatus(payload.detected ? 'detected' : 'default')
+
+        if (!hasManualLanguage.current) {
+          const detectedLanguage = detectedRegion === 'ES' ? 'es' : 'en'
+          setLanguage(detectedLanguage)
+          updateLanguageRoute(detectedLanguage, 'replace')
+        }
       } catch {
         if (!isMounted) {
           return
@@ -264,7 +331,27 @@ function App() {
   const selectRegion = (newRegion: string) => {
     hasManualRegion.current = true
     setRegion(newRegion)
-    setLocationStatus('detected')
+    setLocationStatus('manual')
+  }
+
+  const selectLanguage = (
+    event: MouseEvent<HTMLAnchorElement>,
+    newLanguage: Language,
+  ) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    hasManualLanguage.current = true
+    setLanguage(newLanguage)
+    updateLanguageRoute(newLanguage)
   }
 
   const submitRecommendationRequest = async (event: FormEvent) => {
@@ -315,6 +402,43 @@ function App() {
 
   return (
     <main className="app-shell">
+      <div className="top-controls">
+        <nav className="language-switcher" aria-label={t.languageSwitcherLabel}>
+          {languageOptions.map((option) => (
+            <a
+              aria-current={option.id === language ? 'page' : undefined}
+              className={`language-option${
+                option.id === language ? ' is-active' : ''
+              }`}
+              href={option.path}
+              key={option.id}
+              onClick={(event) => selectLanguage(event, option.id)}
+            >
+              <span aria-hidden="true" className="language-flag">
+                {option.flag}
+              </span>
+              <span>{t.languages[option.id]}</span>
+            </a>
+          ))}
+        </nav>
+
+        <label className="location-control">
+          <span className="location-label">{t.locationLabel}</span>
+          <span className="location-message">{locationMessage}</span>
+          <select
+            aria-label={t.changeLocationLabel}
+            onChange={(event) => selectRegion(event.target.value)}
+            value={region}
+          >
+            {regionOptions.map((regionCode) => (
+              <option key={regionCode} value={regionCode}>
+                {t.countries[regionCode as keyof typeof t.countries] ?? regionCode}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <section className="hero">
         <img
           alt={t.appAlt}
@@ -329,34 +453,6 @@ function App() {
 
       <section className="panel">
         <form onSubmit={submitRecommendationRequest}>
-          <div className="locale-grid">
-            <label className="field">
-              <span>{t.languageLabel}</span>
-              <select
-                onChange={(event) => setLanguage(event.target.value as Language)}
-                value={language}
-              >
-                <option value="en">{t.languages.en}</option>
-                <option value="es">{t.languages.es}</option>
-              </select>
-            </label>
-
-            <label className="field">
-              <span>{t.regionLabel}</span>
-              <select
-                onChange={(event) => selectRegion(event.target.value)}
-                value={region}
-              >
-                {regionOptions.map((regionCode) => (
-                  <option key={regionCode} value={regionCode}>
-                    {t.countries[regionCode as keyof typeof t.countries] ?? regionCode}
-                  </option>
-                ))}
-              </select>
-              <small className="field-help">{locationMessage}</small>
-            </label>
-          </div>
-
           <fieldset>
             <legend>{t.providerLegend}</legend>
             <div className="provider-grid">
