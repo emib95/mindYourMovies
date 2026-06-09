@@ -28,3 +28,31 @@ The server starts on `http://localhost:8000`.
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
 group context, and optional notes. It returns one movie title and one watch link.
+
+## OpenAI response scenarios
+
+The backend includes 30 deterministic OpenAI request scenarios in
+`tests/evals/openai_scenarios.py`. Each scenario builds the same payload shape
+the app sends to OpenAI: region, user answers, and candidate movies.
+
+Run the validation tests without making OpenAI calls:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Analyze deterministic fallback responses:
+
+```bash
+python -m tests.evals.analyze_openai_responses
+```
+
+Analyze live OpenAI responses when `OPENAI_API_KEY` is configured:
+
+```bash
+python -m tests.evals.analyze_openai_responses --live --output reports/openai-eval.json
+```
+
+The report summarizes required fields, whether the returned title and watch link
+match the candidate list, provider consistency, fallback usage, and per-scenario
+response details.
