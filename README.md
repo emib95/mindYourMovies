@@ -138,7 +138,7 @@ Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
 
 ```json
 {
-  "providers": ["netflix", "disney"],
+  "providers": ["netflix", "disney", "prime"],
   "mood": "Something funny and easy to watch",
   "group_context": "Four friends after dinner",
   "notes": "No horror tonight"

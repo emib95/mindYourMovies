@@ -15,6 +15,7 @@ class ProviderConfig:
 PROVIDER_CONFIG: dict[Provider, ProviderConfig] = {
     Provider.netflix: ProviderConfig("Netflix", (8,)),
     Provider.disney: ProviderConfig("Disney+", (337,)),
+    Provider.prime: ProviderConfig("Prime Video", (9, 119)),
     Provider.youtube: ProviderConfig("YouTube", (192,)),
     Provider.hbo: ProviderConfig("HBO / NOW", (39, 384, 1899)),
 }
@@ -38,6 +39,15 @@ DEMO_CANDIDATES = [
         rating=8.4,
         provider_names=["Disney+"],
         watch_link="https://www.themoviedb.org/movie/324857/watch?locale=GB",
+    ),
+    MovieCandidate(
+        tmdb_id=588228,
+        title="The Tomorrow War",
+        overview="A family man is drafted into a future war where humanity is losing against a deadly alien species.",
+        release_year="2021",
+        rating=7.5,
+        provider_names=["Prime Video"],
+        watch_link="https://www.themoviedb.org/movie/588228/watch?locale=GB",
     ),
     MovieCandidate(
         tmdb_id=157336,
