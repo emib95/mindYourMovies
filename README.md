@@ -3,13 +3,15 @@
 MindYourMovies is a full-stack skeleton for reducing movie-night indecision. The
 React TypeScript frontend asks a few focused questions, and the FastAPI backend
 uses UK TMDb availability plus an LLM to return exactly one movie recommendation
-with a watch link.
+with a watch link. When configured, the backend also uses Bing Web Search to
+resolve that final TMDb watch link to an official provider page.
 
 ## Stack
 
 - Frontend: React, TypeScript, Vite
 - Backend: Python, FastAPI, httpx
 - Data source: TMDb watch-provider data for the UK (`TMDB_REGION=GB`)
+- Optional link resolver: Bing Web Search API for official provider URLs
 - AI selection: OpenAI-compatible chat completion via the `openai` Python SDK
 
 ## Project structure
@@ -52,6 +54,13 @@ Set these values in `backend/.env`:
   and popularity are used as audience-size signals.
 - `TMDB_CANDIDATE_LIMIT`: maximum number of ranked candidates sent to the LLM,
   defaulting to `60`.
+- `PROVIDER_LINK_SEARCH_ENABLED`: enables official provider link lookup when a
+  Bing key is configured, defaulting to `true`.
+- `BING_SEARCH_API_KEY`: optional Bing Web Search key used only after the final
+  recommendation is selected. If it is missing or no confident result is found,
+  the backend keeps the TMDb watch link.
+- `BING_SEARCH_ENDPOINT`: Bing Web Search endpoint, defaulting to
+  `https://api.bing.microsoft.com/v7.0/search`.
 - `OPENAI_API_KEY`: LLM API key used to choose the final movie.
 - `OPENAI_MODEL`: Model name, defaulting to `gpt-4.1-mini`.
 
@@ -96,6 +105,7 @@ Pushes to `main` auto-deploy both via their GitHub integrations. GitHub Actions
 ALLOWED_ORIGINS=["https://mindyourmovies.com","https://www.mindyourmovies.com"]
 TMDB_API_KEY=<your key>
 OPENAI_API_KEY=<your key>
+BING_SEARCH_API_KEY=<your key>
 TMDB_REGION=GB
 OPENAI_MODEL=gpt-4.1-mini
 ```
@@ -163,7 +173,10 @@ the LLM to choose. It searches for explicit title/reference requests, expands
 from TMDb similar/recommended movies, uses classic-aware discovery when the
 prompt asks for cinema classics or masterpieces, and sends up to 60 ranked
 candidates to the LLM. The LLM receives each candidate's rating, vote count, and
-popularity so it can favor movies with stronger audience signals.
+popularity so it can favor movies with stronger audience signals. After the LLM
+selects one movie, the optional Bing resolver searches for an official page from
+the selected provider and only replaces the TMDb link when the result matches an
+allowed provider domain.
 
 Response:
 
@@ -171,9 +184,11 @@ Response:
 {
   "movie_title": "Example Movie",
   "provider": "Netflix",
-  "watch_link": "https://www.themoviedb.org/movie/123/watch?locale=GB",
+  "watch_link": "https://www.netflix.com/title/123456",
   "reason": "This best fits the requested mood.",
   "why_recommended": "It matches the light tone you asked for and is available from one of your selected providers without an extra rental fee.",
-  "tmdb_id": 123
+  "tmdb_id": 123,
+  "region": "GB",
+  "language": "en"
 }
 ```

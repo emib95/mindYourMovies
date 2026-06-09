@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     tmdb_min_vote_count: int = 500
     tmdb_candidate_limit: int = 60
     geolocation_api_url: str = "https://ipwho.is/{ip}?fields=success,country_code"
+    provider_link_search_enabled: bool = True
+    bing_search_api_key: str | None = None
+    bing_search_endpoint: str = "https://api.bing.microsoft.com/v7.0/search"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
 

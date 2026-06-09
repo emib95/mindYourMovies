@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.schemas import LocationResponse, RecommendationRequest, RecommendationResponse
 from app.services.llm import RecommendationEngine
 from app.services.location import LocationResolver
+from app.services.provider_links import ProviderLinkResolver
 from app.services.tmdb import TMDbClient
 
 
@@ -23,6 +24,7 @@ app.add_middleware(
 tmdb_client = TMDbClient(settings)
 recommendation_engine = RecommendationEngine(settings)
 location_resolver = LocationResolver(settings)
+provider_link_resolver = ProviderLinkResolver(settings)
 
 
 @app.get("/")
@@ -80,9 +82,14 @@ async def create_recommendation(
         )
 
     try:
-        return await recommendation_engine.recommend(recommendation_request, candidates)
+        recommendation = await recommendation_engine.recommend(
+            recommendation_request,
+            candidates,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return await provider_link_resolver.resolve(recommendation)
 
 
 def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:

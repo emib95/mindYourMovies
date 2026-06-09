@@ -1,7 +1,8 @@
 # MindYourMovies backend
 
-FastAPI backend that gathers region-specific movie candidates from TMDb and asks
-an LLM to choose a single recommendation.
+FastAPI backend that gathers region-specific movie candidates from TMDb, asks an
+LLM to choose a single recommendation, and can optionally resolve the final TMDb
+watch link to an official provider page.
 
 ## Setup
 
@@ -28,6 +29,13 @@ The server starts on `http://localhost:8000`.
   defaulting to `60`.
 - `GEOLOCATION_API_URL`: optional IP geolocation endpoint template. Defaults to
   `https://ipwho.is/{ip}?fields=success,country_code`.
+- `PROVIDER_LINK_SEARCH_ENABLED`: enables official provider link lookup when a
+  Bing key is configured. Defaults to `true`.
+- `BING_SEARCH_API_KEY`: optional Bing Web Search key. Link lookup runs only
+  after the final recommendation is selected, and the TMDb watch link is kept if
+  no confident official-provider result is found.
+- `BING_SEARCH_ENDPOINT`: Bing Web Search endpoint. Defaults to
+  `https://api.bing.microsoft.com/v7.0/search`.
 - `OPENAI_API_KEY`: optional for local development; without it, a deterministic
   demo recommendation is returned.
 - `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
@@ -42,4 +50,6 @@ their public IP address, then falls back to `TMDB_REGION`.
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
 paid rentals or purchases. The backend uses title/reference searches, similar
 movies, classic-aware discovery, and provider availability to build a ranked
-candidate list before asking the LLM to choose one movie.
+candidate list before asking the LLM to choose one movie. If Bing Web Search is
+configured, it then searches for an official page on the selected provider's
+domain and replaces the TMDb watch link only for confident matches.
