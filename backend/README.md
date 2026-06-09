@@ -19,6 +19,11 @@ The server starts on `http://localhost:8000`.
 
 - `TMDB_API_KEY`: TMDb key for `/discover/movie`.
 - `TMDB_REGION`: fallback TMDb watch region, defaults to `GB`.
+- `TMDB_MIN_VOTE_AVERAGE`: minimum TMDb user rating for candidates, defaults to
+  `6.5`.
+- `TMDB_MIN_VOTE_COUNT`: minimum number of TMDb votes for candidates, defaults
+  to `50`. This is used as the audience-size signal because TMDb does not expose
+  raw per-movie view counts.
 - `GEOLOCATION_API_URL`: optional IP geolocation endpoint template. Defaults to
   `https://ipwho.is/{ip}?fields=success,country_code`.
 - `OPENAI_API_KEY`: optional for local development; without it, a deterministic

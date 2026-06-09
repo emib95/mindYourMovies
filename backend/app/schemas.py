@@ -63,6 +63,8 @@ class MovieCandidate(BaseModel):
     overview: str
     release_year: str | None = None
     rating: float | None = None
+    vote_count: int | None = None
+    popularity: float | None = None
     provider_names: list[str]
     watch_link: HttpUrl
 

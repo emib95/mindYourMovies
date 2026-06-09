@@ -35,6 +35,8 @@ DEMO_CANDIDATES = [
         overview="An insomniac office worker and a soap maker form an underground fight club that spirals into something much larger.",
         release_year="1999",
         rating=8.4,
+        vote_count=30000,
+        popularity=78.0,
         provider_names=["Netflix"],
         watch_link="https://www.themoviedb.org/movie/550/watch?locale=GB",
     ),
@@ -44,6 +46,8 @@ DEMO_CANDIDATES = [
         overview="Teen Miles Morales becomes Spider-Man and joins heroes from across the multiverse.",
         release_year="2018",
         rating=8.4,
+        vote_count=16000,
+        popularity=85.0,
         provider_names=["Disney+"],
         watch_link="https://www.themoviedb.org/movie/324857/watch?locale=GB",
     ),
@@ -53,6 +57,8 @@ DEMO_CANDIDATES = [
         overview="A family man is drafted into a future war where humanity is losing against a deadly alien species.",
         release_year="2021",
         rating=7.5,
+        vote_count=3500,
+        popularity=45.0,
         provider_names=["Prime Video"],
         watch_link="https://www.themoviedb.org/movie/588228/watch?locale=GB",
     ),
@@ -62,6 +68,8 @@ DEMO_CANDIDATES = [
         overview="Explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
         release_year="2014",
         rating=8.5,
+        vote_count=37000,
+        popularity=120.0,
         provider_names=["YouTube"],
         watch_link="https://www.themoviedb.org/movie/157336/watch?locale=GB",
     ),
@@ -95,6 +103,8 @@ class TMDbClient:
                     "language": language,
                     "page": 1,
                     "sort_by": "popularity.desc",
+                    "vote_average.gte": self.settings.tmdb_min_vote_average,
+                    "vote_count.gte": self.settings.tmdb_min_vote_count,
                     "watch_region": region,
                     "with_watch_monetization_types": monetization_types,
                     "with_watch_providers": "|".join(str(provider_id) for provider_id in provider_ids),
@@ -110,11 +120,13 @@ class TMDbClient:
                 overview=movie.get("overview") or "No overview available.",
                 release_year=(movie.get("release_date") or "")[:4] or None,
                 rating=movie.get("vote_average"),
+                vote_count=movie.get("vote_count"),
+                popularity=movie.get("popularity"),
                 provider_names=provider_names,
                 watch_link=f"https://www.themoviedb.org/movie/{movie['id']}/watch?locale={region}",
             )
             for movie in movies
-            if movie.get("id")
+            if movie.get("id") and self._passes_quality_threshold(movie)
         ]
 
     def _demo_candidates(
@@ -125,8 +137,13 @@ class TMDbClient:
             self._with_region(candidate, region)
             for candidate in DEMO_CANDIDATES
             if selected_labels.intersection(candidate.provider_names)
+            and self._candidate_passes_quality_threshold(candidate)
         ]
-        return matching or [self._with_region(candidate, region) for candidate in DEMO_CANDIDATES]
+        return matching or [
+            self._with_region(candidate, region)
+            for candidate in DEMO_CANDIDATES
+            if self._candidate_passes_quality_threshold(candidate)
+        ]
 
     def _provider_ids(self, providers: list[Provider]) -> list[int]:
         ids: list[int] = []
@@ -150,6 +167,24 @@ class TMDbClient:
         if recommendation_request.language == "en" and region == "GB":
             return "en-GB"
         return LANGUAGE_LOCALES[recommendation_request.language]
+
+    def _passes_quality_threshold(self, movie: dict) -> bool:
+        rating = movie.get("vote_average")
+        vote_count = movie.get("vote_count")
+        if rating is None or vote_count is None:
+            return False
+        return (
+            float(rating) >= self.settings.tmdb_min_vote_average
+            and int(vote_count) >= self.settings.tmdb_min_vote_count
+        )
+
+    def _candidate_passes_quality_threshold(self, candidate: MovieCandidate) -> bool:
+        if candidate.rating is None or candidate.vote_count is None:
+            return False
+        return (
+            candidate.rating >= self.settings.tmdb_min_vote_average
+            and candidate.vote_count >= self.settings.tmdb_min_vote_count
+        )
 
     def _with_region(self, candidate: MovieCandidate, region: str) -> MovieCandidate:
         return candidate.model_copy(

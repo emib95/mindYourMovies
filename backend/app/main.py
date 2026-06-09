@@ -88,18 +88,26 @@ async def create_recommendation(
 def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:
     region = recommendation_request.region or settings.tmdb_region.upper()
     if recommendation_request.language == "es":
-        return f"No se encontraron peliculas para esas plataformas en {region}."
-    return f"No movies were found for the selected providers in {region}."
+        return (
+            "No se encontraron peliculas que cumplan los filtros de disponibilidad "
+            f"y calidad para esas plataformas en {region}."
+        )
+    return (
+        "No movies matching the availability and quality filters were found for "
+        f"the selected providers in {region}."
+    )
 
 
 def _no_included_movies_detail(recommendation_request: RecommendationRequest) -> str:
     region = recommendation_request.region or settings.tmdb_region.upper()
     if recommendation_request.language == "es":
         return (
-            "No se encontraron peliculas incluidas, gratis o con anuncios para "
+            "No se encontraron peliculas incluidas, gratis o con anuncios que "
+            "cumplan los filtros de calidad para "
             f"esas plataformas en {region}. Prueba permitiendo alquileres o compras."
         )
     return (
-        "No included, free, or ad-supported movies were found for the "
-        f"selected providers in {region}. Try allowing paid rentals or purchases."
+        "No included, free, or ad-supported movies matching the quality filters "
+        f"were found for the selected providers in {region}. Try allowing paid "
+        "rentals or purchases."
     )
