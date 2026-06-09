@@ -45,6 +45,11 @@ uvicorn app.main:app --reload
 Set these values in `backend/.env`:
 
 - `TMDB_API_KEY`: TMDb API key used to fetch UK movie availability.
+- `TMDB_MIN_VOTE_AVERAGE`: minimum TMDb user rating for recommendation
+  candidates, defaulting to `6.5`.
+- `TMDB_MIN_VOTE_COUNT`: minimum TMDb vote count for recommendation candidates,
+  defaulting to `50`. TMDb does not provide raw movie view counts, so vote count
+  and popularity are used as audience-size signals.
 - `OPENAI_API_KEY`: LLM API key used to choose the final movie.
 - `OPENAI_MODEL`: Model name, defaulting to `gpt-4.1-mini`.
 
@@ -150,6 +155,10 @@ Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
 `false`, recommendations exclude titles that are only available as paid rentals
 or purchases. Set it to `true` to include rent/buy options such as many YouTube
 movies.
+
+The backend also filters TMDb candidates by rating and vote count before asking
+the LLM to choose. The LLM receives each candidate's rating, vote count, and
+popularity so it can favor movies with stronger audience signals.
 
 Response:
 

@@ -43,6 +43,7 @@ class RecommendationEngine:
                         "content": (
                             "You help people stop scrolling and pick one movie. "
                             "Choose exactly one title from the candidate list. "
+                            "Favor well-rated candidates with stronger vote counts and popularity. "
                             "Respect the user's allow_extra_costs preference when explaining the choice. "
                             "Return JSON only with movie_title, provider, watch_link, and reason. "
                             f"Write the reason in {LANGUAGE_LABELS[recommendation_request.language]}. "
@@ -125,11 +126,13 @@ class RecommendationEngine:
             if part
         ).lower()
 
-        def score(candidate: MovieCandidate) -> tuple[int, float]:
+        def score(candidate: MovieCandidate) -> tuple[int, float, int, float]:
             searchable = f"{candidate.title} {candidate.overview}".lower()
             keyword_score = sum(1 for word in query.split() if word in searchable)
             rating = candidate.rating or 0
-            return keyword_score, rating
+            vote_count = candidate.vote_count or 0
+            popularity = candidate.popularity or 0
+            return keyword_score, rating, vote_count, popularity
 
         return max(candidates, key=score)
 
