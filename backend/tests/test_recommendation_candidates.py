@@ -7,13 +7,14 @@ from app.services.tmdb import TMDbClient
 
 
 def make_client(**overrides: object) -> TMDbClient:
-    settings = Settings(
-        tmdb_api_key="test-key",
-        tmdb_min_vote_average=7.0,
-        tmdb_min_vote_count=500,
-        tmdb_candidate_limit=60,
+    settings_values = {
+        "tmdb_api_key": "test-key",
+        "tmdb_min_vote_average": 7.0,
+        "tmdb_min_vote_count": 500,
+        "tmdb_candidate_limit": 60,
         **overrides,
-    )
+    }
+    settings = Settings(**settings_values)
     return TMDbClient(settings)
 
 
