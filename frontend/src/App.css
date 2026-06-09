@@ -175,8 +175,22 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.recommendation p:not(.eyebrow) {
+.recommendation-summary {
   margin-bottom: 20px;
+}
+
+.recommendation-why {
+  background: var(--panel-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 18px;
+  margin-bottom: 20px;
+  padding: 16px;
+}
+
+.recommendation-why h3 {
+  color: var(--text-h);
+  font-size: 1rem;
+  margin: 0 0 8px;
 }
 
 @media (max-width: 760px) {

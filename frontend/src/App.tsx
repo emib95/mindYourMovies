@@ -12,6 +12,7 @@ type Recommendation = {
   provider: string
   watch_link: string
   reason: string
+  why_recommended: string
   region: string
   language: Language
 }
@@ -105,6 +106,7 @@ const translations = {
     loading: 'Choosing...',
     submit: 'Recommend one movie',
     pick: "Tonight's pick",
+    whyRecommended: 'Why this recommendation?',
     watchOn: (provider: string) => `Watch on ${provider}`,
     errors: {
       recommendation: 'Could not get a recommendation.',
@@ -162,6 +164,7 @@ const translations = {
     loading: 'Eligiendo...',
     submit: 'Recomendar una pelicula',
     pick: 'La eleccion de hoy',
+    whyRecommended: 'Por que esta recomendacion?',
     watchOn: (provider: string) => `Ver en ${provider}`,
     errors: {
       recommendation: 'No se pudo obtener una recomendacion.',
@@ -424,7 +427,11 @@ function App() {
           <article className="recommendation">
             <p className="eyebrow">{t.pick}</p>
             <h2>{recommendation.movie_title}</h2>
-            <p>{recommendation.reason}</p>
+            <p className="recommendation-summary">{recommendation.reason}</p>
+            <section className="recommendation-why">
+              <h3>{t.whyRecommended}</h3>
+              <p>{recommendation.why_recommended}</p>
+            </section>
             <a href={recommendation.watch_link} rel="noreferrer" target="_blank">
               {t.watchOn(recommendation.provider)}
             </a>

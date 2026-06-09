@@ -159,6 +159,7 @@ Response:
   "provider": "Netflix",
   "watch_link": "https://www.themoviedb.org/movie/123/watch?locale=GB",
   "reason": "This best fits the requested mood.",
+  "why_recommended": "It matches the light tone you asked for and is available from one of your selected providers without an extra rental fee.",
   "tmdb_id": 123
 }
 ```

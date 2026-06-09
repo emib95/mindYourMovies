@@ -72,6 +72,7 @@ class RecommendationResponse(BaseModel):
     provider: str
     watch_link: HttpUrl
     reason: str
+    why_recommended: str
     tmdb_id: int | None = None
     region: str
     language: Literal["en", "es"]
