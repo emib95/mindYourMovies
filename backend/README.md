@@ -27,4 +27,5 @@ The server starts on `http://localhost:8000`.
 ## Endpoint
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
-group context, and optional notes. It returns one movie title and one watch link.
+group context, optional notes, and `allow_extra_costs` for paid rentals or
+purchases. It returns one movie title and one watch link.

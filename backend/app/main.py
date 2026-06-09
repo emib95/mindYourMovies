@@ -50,9 +50,15 @@ async def create_recommendation(
         ) from exc
 
     if not candidates:
+        detail = "No movies were found for the selected providers in the UK."
+        if not recommendation_request.allow_extra_costs:
+            detail = (
+                "No included, free, or ad-supported movies were found for the "
+                "selected providers in the UK. Try allowing paid rentals or purchases."
+            )
         raise HTTPException(
             status_code=404,
-            detail="No movies were found for the selected providers in the UK.",
+            detail=detail,
         )
 
     try:

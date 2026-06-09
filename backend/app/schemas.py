@@ -14,6 +14,10 @@ class Provider(str, Enum):
 class RecommendationRequest(BaseModel):
     providers: list[Provider] = Field(..., min_length=1)
     mood: str = Field(..., min_length=2, max_length=240)
+    allow_extra_costs: bool = Field(
+        default=False,
+        description="Whether paid rentals or purchases outside subscriptions are acceptable.",
+    )
     group_context: str | None = Field(
         default=None,
         max_length=240,

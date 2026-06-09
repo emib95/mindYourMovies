@@ -31,6 +31,7 @@ function App() {
   const [mood, setMood] = useState('')
   const [groupContext, setGroupContext] = useState('')
   const [notes, setNotes] = useState('')
+  const [allowExtraCosts, setAllowExtraCosts] = useState(false)
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
     null,
   )
@@ -65,6 +66,7 @@ function App() {
         body: JSON.stringify({
           providers: selectedProviders,
           mood,
+          allow_extra_costs: allowExtraCosts,
           group_context: groupContext || null,
           notes: notes || null,
         }),
@@ -125,6 +127,21 @@ function App() {
               ))}
             </div>
           </fieldset>
+
+          <label className="paid-option">
+            <input
+              checked={allowExtraCosts}
+              onChange={(event) => setAllowExtraCosts(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>I am willing to pay extra for rentals or purchases.</strong>
+              <small>
+                When unchecked, TMDb results exclude paid rent/buy options such as
+                many YouTube movies.
+              </small>
+            </span>
+          </label>
 
           <label className="field">
             <span>What do you feel like watching?</span>
