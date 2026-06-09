@@ -5,9 +5,9 @@
   --panel-bg: #ffffff;
   --field-bg: #fbfaf8;
   --border: #e2ded8;
-  --accent: #7c3aed;
-  --accent-bg: rgba(124, 58, 237, 0.1);
-  --accent-border: rgba(124, 58, 237, 0.32);
+  --accent: #101f7c;
+  --accent-bg: rgba(16, 31, 124, 0.09);
+  --accent-border: rgba(16, 31, 124, 0.28);
   --shadow:
     rgba(33, 24, 49, 0.08) 0 20px 60px, rgba(33, 24, 49, 0.04) 0 4px
     12px;
@@ -39,9 +39,9 @@
     --panel-bg: #191424;
     --field-bg: #211a2e;
     --border: #342a45;
-    --accent: #a78bfa;
-    --accent-bg: rgba(167, 139, 250, 0.14);
-    --accent-border: rgba(167, 139, 250, 0.36);
+    --accent: #91a7ff;
+    --accent-bg: rgba(145, 167, 255, 0.14);
+    --accent-border: rgba(145, 167, 255, 0.36);
     --shadow:
       rgba(0, 0, 0, 0.35) 0 20px 60px, rgba(0, 0, 0, 0.2) 0 4px 12px;
   }
@@ -59,7 +59,8 @@
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(124, 58, 237, 0.16), transparent 30rem),
+    radial-gradient(circle at top left, rgba(217, 45, 32, 0.16), transparent 24rem),
+    radial-gradient(circle at top right, rgba(16, 31, 124, 0.12), transparent 28rem),
     var(--bg);
   margin: 0;
 }

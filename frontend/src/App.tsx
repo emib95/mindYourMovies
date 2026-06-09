@@ -1,6 +1,7 @@
 import './App.css'
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import mindTheMovieLogo from './assets/mind-the-movie.svg'
 
 type ProviderId = 'netflix' | 'disney' | 'youtube' | 'hbo'
 
@@ -9,7 +10,6 @@ type Recommendation = {
   provider: string
   watch_link: string
   reason: string
-  tmdb_id?: number
 }
 
 const providers: Array<{ id: ProviderId; label: string }> = [
@@ -95,12 +95,15 @@ function App() {
   return (
     <main className="app-shell">
       <section className="hero">
-        <p className="eyebrow">UK movie availability + AI decision helper</p>
+        <img
+          alt="Mind the Movie"
+          className="hero-logo"
+          src={mindTheMovieLogo}
+        />
         <h1>Stop scrolling. Pick one movie.</h1>
         <p className="hero-copy">
-          Tell MindYourMovies which providers you can access and what everyone
-          feels like watching. It checks TMDb candidates for the UK and asks the
-          AI to return one movie with a watch link.
+          Tell us which providers you can use and what everyone feels like
+          watching. We will suggest one movie with a simple way to start it.
         </p>
       </section>
 
