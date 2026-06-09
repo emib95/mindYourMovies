@@ -48,6 +48,12 @@ form {
   gap: 24px;
 }
 
+.locale-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 fieldset {
   border: 0;
   margin: 0;
@@ -101,6 +107,7 @@ legend,
 }
 
 .field input,
+.field select,
 .field textarea {
   background: var(--field-bg);
   border: 1px solid var(--border);
@@ -110,6 +117,16 @@ legend,
   font: inherit;
   padding: 14px 16px;
   width: 100%;
+}
+
+.field select {
+  appearance: none;
+}
+
+.field-help {
+  color: var(--text);
+  display: block;
+  margin-top: 8px;
 }
 
 .field textarea {
@@ -176,6 +193,10 @@ button:disabled {
   }
 
   .provider-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .locale-grid {
     grid-template-columns: 1fr;
   }
 }
