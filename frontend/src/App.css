@@ -69,6 +69,27 @@ legend,
   padding: 14px;
 }
 
+.paid-option {
+  align-items: flex-start;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.paid-option strong,
+.paid-option small {
+  display: block;
+}
+
+.paid-option small {
+  color: var(--text);
+  margin-top: 4px;
+}
+
 .field input,
 .field textarea {
   background: var(--field-bg);

@@ -140,10 +140,16 @@ Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
 {
   "providers": ["netflix", "disney"],
   "mood": "Something funny and easy to watch",
+  "allow_extra_costs": false,
   "group_context": "Four friends after dinner",
   "notes": "No horror tonight"
 }
 ```
+
+`allow_extra_costs` controls TMDb watch monetization filtering. When it is
+`false`, recommendations exclude titles that are only available as paid rentals
+or purchases. Set it to `true` to include rent/buy options such as many YouTube
+movies.
 
 Response:
 

@@ -32,6 +32,7 @@ class RecommendationEngine:
                         "content": (
                             "You help people stop scrolling and pick one movie. "
                             "Choose exactly one title from the candidate list. "
+                            "Respect the user's allow_extra_costs preference when explaining the choice. "
                             "Return JSON only with movie_title, provider, watch_link, and reason. "
                             "Do not invent titles or links."
                         ),

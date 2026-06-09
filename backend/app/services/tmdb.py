@@ -19,6 +19,9 @@ PROVIDER_CONFIG: dict[Provider, ProviderConfig] = {
     Provider.hbo: ProviderConfig("HBO / NOW", (39, 384, 1899)),
 }
 
+INCLUDED_MONETIZATION_TYPES = ("flatrate", "free", "ads")
+PAID_MONETIZATION_TYPES = ("rent", "buy")
+
 
 DEMO_CANDIDATES = [
     MovieCandidate(
@@ -64,6 +67,7 @@ class TMDbClient:
 
         provider_ids = self._provider_ids(recommendation_request.providers)
         provider_names = self._provider_names(recommendation_request.providers)
+        monetization_types = self._monetization_types(recommendation_request)
 
         async with httpx.AsyncClient(timeout=12) as client:
             response = await client.get(
@@ -76,7 +80,7 @@ class TMDbClient:
                     "page": 1,
                     "sort_by": "popularity.desc",
                     "watch_region": self.settings.tmdb_region,
-                    "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+                    "with_watch_monetization_types": monetization_types,
                     "with_watch_providers": "|".join(str(provider_id) for provider_id in provider_ids),
                 },
             )
@@ -114,3 +118,9 @@ class TMDbClient:
 
     def _provider_names(self, providers: list[Provider]) -> list[str]:
         return [PROVIDER_CONFIG[provider].label for provider in providers]
+
+    def _monetization_types(self, recommendation_request: RecommendationRequest) -> str:
+        monetization_types = list(INCLUDED_MONETIZATION_TYPES)
+        if recommendation_request.allow_extra_costs:
+            monetization_types.extend(PAID_MONETIZATION_TYPES)
+        return "|".join(monetization_types)
