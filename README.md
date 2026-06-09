@@ -70,6 +70,10 @@ npm run dev
 The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
 `http://localhost:8000`.
 
+To enable the small "Buy me a coffee" support section, set
+`VITE_DONATION_URL` to a Stripe Payment Link URL. If this value is empty, the
+section remains visible but does not show a clickable donation button.
+
 ## Deploy
 
 Production uses **Cloudflare Pages** (frontend) and **Railway** (backend).
@@ -123,11 +127,32 @@ OPENAI_MODEL=gpt-4.1-mini
 
 ```env
 VITE_API_BASE_URL=https://api.mindyourmovies.com
+VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
 ```
 
 4. **Custom domains:** `mindyourmovies.com` and `www.mindyourmovies.com`
 
 Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
+
+### Stripe donations
+
+The app uses a Stripe Payment Link for donations, so no Stripe secret key is
+stored in the frontend or backend.
+
+1. Create or sign in to a Stripe account at [dashboard.stripe.com](https://dashboard.stripe.com).
+2. In Stripe, go to **Payment Links** and create a new link.
+3. Add a donation-style product such as "Buy me a coffee". For flexible support,
+   enable customer-adjustable quantity or create a few fixed donation prices.
+4. Copy the published payment link URL.
+5. For local development, set it in `frontend/.env`:
+
+```env
+VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
+```
+
+6. For production, add the same `VITE_DONATION_URL` value in Cloudflare Pages
+   under **Settings -> Environment variables -> Production**, then rebuild the
+   frontend. Vite bakes this value into the deployed site at build time.
 
 ### Troubleshooting
 

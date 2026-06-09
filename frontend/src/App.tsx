@@ -58,6 +58,7 @@ const regionOptions = [
 const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 ).replace(/\/+$/, '')
+const donationUrl = (import.meta.env.VITE_DONATION_URL ?? '').trim()
 
 const translations = {
   en: {
@@ -119,6 +120,13 @@ const translations = {
     pick: "Tonight's pick",
     whyRecommended: 'Why this recommendation?',
     watchOn: (provider: string) => `Watch on ${provider}`,
+    donationEyebrow: 'Support',
+    donationTitle: 'Buy me a coffee',
+    donationCopy:
+      'If Mind the Movie saved your evening, you can support the project with a small donation.',
+    donationCta: 'Donate with Stripe',
+    donationUnavailable:
+      'Donations will be available once a Stripe payment link is configured.',
     errors: {
       recommendation: 'Could not get a recommendation.',
       generic: 'Something went wrong while choosing a movie.',
@@ -183,6 +191,13 @@ const translations = {
     pick: 'La eleccion de hoy',
     whyRecommended: 'Por que esta recomendacion?',
     watchOn: (provider: string) => `Ver en ${provider}`,
+    donationEyebrow: 'Apoyo',
+    donationTitle: 'Invitame a un cafe',
+    donationCopy:
+      'Si Mind the Movie te ayudo a elegir pelicula, puedes apoyar el proyecto con una pequena donacion.',
+    donationCta: 'Donar con Stripe',
+    donationUnavailable:
+      'Las donaciones estaran disponibles cuando se configure un enlace de pago de Stripe.',
     errors: {
       recommendation: 'No se pudo obtener una recomendacion.',
       generic: 'Algo salio mal al elegir una pelicula.',
@@ -533,6 +548,21 @@ function App() {
             </a>
           </article>
         ) : null}
+      </section>
+
+      <section className="donation-section" aria-labelledby="donation-title">
+        <div>
+          <p className="eyebrow">{t.donationEyebrow}</p>
+          <h2 id="donation-title">{t.donationTitle}</h2>
+          <p>{t.donationCopy}</p>
+        </div>
+        {donationUrl ? (
+          <a href={donationUrl} rel="noreferrer" target="_blank">
+            {t.donationCta}
+          </a>
+        ) : (
+          <span className="donation-muted">{t.donationUnavailable}</span>
+        )}
       </section>
     </main>
   )

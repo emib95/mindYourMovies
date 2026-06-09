@@ -204,7 +204,8 @@ legend,
 }
 
 button,
-.recommendation a {
+.recommendation a,
+.donation-section a {
   align-items: center;
   background: var(--accent);
   border: 0;
@@ -263,6 +264,42 @@ button:disabled {
   margin: 0 0 8px;
 }
 
+.donation-section {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.donation-section div {
+  max-width: 620px;
+}
+
+.donation-section .eyebrow {
+  margin-bottom: 8px;
+}
+
+.donation-section h2 {
+  margin-bottom: 8px;
+}
+
+.donation-section a {
+  background: transparent;
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.donation-muted {
+  color: var(--text);
+  flex: 0 0 auto;
+  font-size: 0.92rem;
+  max-width: 280px;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     padding: 36px 18px;
@@ -297,5 +334,10 @@ button:disabled {
 
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+
+  .donation-section {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
