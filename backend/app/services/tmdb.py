@@ -4,6 +4,7 @@ import re
 import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 import httpx
 
@@ -43,6 +44,8 @@ MIN_CLASSIC_VOTE_COUNT = 1000
 MAX_REFERENCE_QUERIES = 3
 MAX_REFERENCE_RELATED_MOVIES = 40
 MAX_AVAILABILITY_REQUESTS = 8
+FUZZY_REFERENCE_TITLE_THRESHOLD = 0.82
+MIN_FUZZY_REFERENCE_LENGTH = 6
 
 CLASSIC_INTENT_TERMS = (
     "classic",
@@ -119,12 +122,18 @@ GENERIC_REFERENCE_WORDS = {
     "watch",
 }
 SIMILARITY_REFERENCE_PATTERNS = (
-    r"\bsimilar(?:\s+(?:movie|film|movies|films))?\s+to\s+([^,.;:\n]+)",
-    r"\b(?:something|anything|movie|film|movies|films|one)\s+like\s+([^,.;:\n]+)",
+    r"\bsimilar(?:\s+(?:movie|film|movies|films|pel[ií]cula|pel[ií]culas|"
+    r"peli|pelis|filme|filmes))?\s+(?:to|a|al|à|an|zu)\s+([^,.;:\n]+)",
+    r"\b(?:something|anything|movie|film|movies|films|one|algo|una|uno|"
+    r"pel[ií]cula|pel[ií]culas|peli|pelis|filme|filmes)\s+"
+    r"(?:like|como|similar(?:es)?\s+a|parecid[oa]s?\s+a)\s+([^,.;:\n]+)",
     r"\bin the (?:same )?(?:vein|style|mood|vibe) as\s+([^,.;:\n]+)",
     r"\balong the lines of\s+([^,.;:\n]+)",
+    r"\b(?:parecid[oa]s?|similar(?:es)?)\s+(?:a|al)\s+([^,.;:\n]+)",
     r"\bparecida a\s+([^,.;:\n]+)",
     r"\bparecido a\s+([^,.;:\n]+)",
+    r"\b(?:del|en el|de ese|de ese mismo)\s+estilo\s+(?:de|que)\s+([^,.;:\n]+)",
+    r"\b(?:misma|mismo)\s+(?:l[ií]nea|onda|vibra|estilo)\s+(?:que|de)\s+([^,.;:\n]+)",
 )
 REFERENCE_PATTERNS = (
     *SIMILARITY_REFERENCE_PATTERNS,
@@ -479,8 +488,11 @@ class TMDbClient:
         deduped_candidates = [
             candidate
             for candidate in self._dedupe_candidates(candidates)
-            if candidate.tmdb_id not in excluded_ids
-            and self._normalized_text(candidate.title) not in excluded_titles
+            if not self._is_excluded_similarity_candidate(
+                candidate,
+                excluded_ids,
+                excluded_titles,
+            )
         ]
         return sorted(
             deduped_candidates,
@@ -608,18 +620,55 @@ class TMDbClient:
 
         normalized_query = self._normalized_text(query)
 
-        def score(movie: dict) -> tuple[int, float, int, float]:
+        def score(movie: dict) -> tuple[int, float, float, int, float]:
             title = self._normalized_text(
                 movie.get("title") or movie.get("original_title") or ""
             )
+            title_similarity = self._title_similarity(title, normalized_query)
             return (
-                int(title == normalized_query),
+                int(title_similarity >= FUZZY_REFERENCE_TITLE_THRESHOLD),
+                title_similarity,
                 float(movie.get("vote_average") or 0),
                 int(movie.get("vote_count") or 0),
                 float(movie.get("popularity") or 0),
             )
 
         return max(movies, key=score)
+
+    def _is_excluded_similarity_candidate(
+        self,
+        candidate: MovieCandidate,
+        excluded_tmdb_ids: set[int],
+        excluded_titles: set[str],
+    ) -> bool:
+        if candidate.tmdb_id in excluded_tmdb_ids:
+            return True
+
+        title = self._normalized_text(candidate.title)
+        return any(
+            self._is_same_reference_title(title, excluded_title)
+            for excluded_title in excluded_titles
+        )
+
+    def _is_same_reference_title(self, title: str, reference_title: str) -> bool:
+        if not title or not reference_title:
+            return False
+        if title == reference_title:
+            return True
+        if min(len(title), len(reference_title)) < MIN_FUZZY_REFERENCE_LENGTH:
+            return False
+
+        return self._title_similarity(title, reference_title) >= (
+            FUZZY_REFERENCE_TITLE_THRESHOLD
+        )
+
+    def _title_similarity(self, title: str, reference_title: str) -> float:
+        normalized_title = self._compact_normalized_text(title)
+        normalized_reference = self._compact_normalized_text(reference_title)
+        if not normalized_title or not normalized_reference:
+            return 0.0
+
+        return SequenceMatcher(None, normalized_title, normalized_reference).ratio()
 
     def _reference_queries(
         self,
@@ -696,13 +745,15 @@ class TMDbClient:
     def _clean_reference_query(self, value: str) -> str:
         cleaned = re.sub(
             r"^(?:let'?s\s+say(?:\s+for\s+(?:instance|example))?|"
-            r"for\s+(?:instance|example)|say)\s+",
+            r"for\s+(?:instance|example)|say|por\s+ejemplo|digamos(?:\s+que)?|"
+            r"por\s+decir(?:\s+algo)?|tipo)\s+",
             "",
             value.strip(),
             flags=re.IGNORECASE,
         )
         cleaned = re.sub(
-            r"\b(with|for|but|and|that|which|please|tonight)\b.*$",
+            r"\b(with|for|but|and|that|which|please|tonight|para|pero|"
+            r"por\s+favor|esta\s+noche|hoy)\b.*$",
             "",
             cleaned,
             flags=re.IGNORECASE,
@@ -734,6 +785,9 @@ class TMDbClient:
         normalized = unicodedata.normalize("NFKD", value)
         ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
         return re.sub(r"\s+", " ", ascii_value.lower()).strip()
+
+    def _compact_normalized_text(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", self._normalized_text(value))
 
     def _release_year(self, candidate: MovieCandidate) -> int | None:
         if not candidate.release_year:

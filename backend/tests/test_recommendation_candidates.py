@@ -18,12 +18,12 @@ def make_client(**overrides: object) -> TMDbClient:
     return TMDbClient(settings)
 
 
-def make_request(mood: str) -> RecommendationRequest:
+def make_request(mood: str, language: str = "en") -> RecommendationRequest:
     return RecommendationRequest(
         providers=[Provider.netflix],
         mood=mood,
         region="GB",
-        language="en",
+        language=language,
     )
 
 
@@ -71,6 +71,25 @@ class TMDbCandidateTests(unittest.TestCase):
 
         self.assertEqual(client._reference_queries(request), ["Shutter Island"])
         self.assertEqual(client._similarity_reference_queries(request), ["Shutter Island"])
+
+    def test_extracts_spanish_similarity_references(self) -> None:
+        client = make_client()
+        requests = [
+            make_request(
+                "Quiero una pelicula similar a Shutter Island",
+                language="es",
+            ),
+            make_request("Algo como Shutter Island para esta noche", language="es"),
+            make_request("Una peli del estilo de Shutter Island", language="es"),
+            make_request("Algo en la misma linea que Shutter Island", language="es"),
+        ]
+
+        for request in requests:
+            with self.subTest(mood=request.mood):
+                self.assertEqual(
+                    client._similarity_reference_queries(request),
+                    ["Shutter Island"],
+                )
 
     def test_rejects_generic_mood_as_title_reference(self) -> None:
         client = make_client()
@@ -155,6 +174,45 @@ class TMDbCandidateTests(unittest.TestCase):
         )
 
         self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_similarity_ranking_fuzzily_excludes_misspelled_reference_title(
+        self,
+    ) -> None:
+        client = make_client()
+        request = make_request("Algo parecido a Suter Island", language="es")
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_best_reference_seed_prefers_fuzzy_title_match(self) -> None:
+        client = make_client()
+        seed = client._best_reference_seed(
+            [
+                {
+                    "id": 10867,
+                    "title": "Treasure Island",
+                    "vote_average": 9.0,
+                    "vote_count": 50000,
+                    "popularity": 100.0,
+                },
+                {
+                    "id": 11324,
+                    "title": "Shutter Island",
+                    "vote_average": 8.2,
+                    "vote_count": 24000,
+                    "popularity": 80.0,
+                },
+            ],
+            "Suter Island",
+        )
+
+        self.assertIsNotNone(seed)
+        self.assertEqual(seed["id"], 11324)
 
     def test_candidate_limit_is_capped_for_llm_prompt_size(self) -> None:
         client = make_client(tmdb_candidate_limit=1000)
