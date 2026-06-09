@@ -7,7 +7,17 @@
 }
 
 .hero {
+  display: grid;
+  gap: 20px;
   max-width: 760px;
+}
+
+.hero-logo {
+  display: block;
+  height: auto;
+  margin-bottom: 8px;
+  max-width: 440px;
+  width: min(100%, 440px);
 }
 
 .eyebrow {
@@ -134,6 +144,14 @@ button:disabled {
 @media (max-width: 760px) {
   .app-shell {
     padding: 36px 18px;
+  }
+
+  .hero {
+    gap: 16px;
+  }
+
+  .hero-logo {
+    margin-bottom: 0;
   }
 
   .provider-grid {
