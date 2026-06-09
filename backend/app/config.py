@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:5173"]
     tmdb_api_key: str | None = None
     tmdb_region: str = "GB"
-    tmdb_min_vote_average: float = 6.5
-    tmdb_min_vote_count: int = 50
+    tmdb_min_vote_average: float = 7.0
+    tmdb_min_vote_count: int = 500
+    tmdb_candidate_limit: int = 60
     geolocation_api_url: str = "https://ipwho.is/{ip}?fields=success,country_code"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
