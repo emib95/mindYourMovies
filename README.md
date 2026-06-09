@@ -70,6 +70,12 @@ npm run dev
 The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
 `http://localhost:8000`.
 
+The small "Buy me a coffee" support section defaults to Emilio's Stripe Payment
+Link. Set `VITE_DONATION_URL` only if the donation URL needs to be changed. The
+creator photo in that section defaults to `/emilio-banqueri.jpg`; place the
+photo in `frontend/public/emilio-banqueri.jpg` or set `VITE_CREATOR_PHOTO_URL`
+to another hosted image URL.
+
 ## Deploy
 
 Production uses **Cloudflare Pages** (frontend) and **Railway** (backend).
@@ -123,11 +129,38 @@ OPENAI_MODEL=gpt-4.1-mini
 
 ```env
 VITE_API_BASE_URL=https://api.mindyourmovies.com
+VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
+VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 ```
 
 4. **Custom domains:** `mindyourmovies.com` and `www.mindyourmovies.com`
 
 Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
+
+### Stripe donations
+
+The app uses a Stripe Payment Link for donations, so no Stripe secret key is
+stored in the frontend or backend.
+
+1. Create or sign in to a Stripe account at [dashboard.stripe.com](https://dashboard.stripe.com).
+2. In Stripe, go to **Payment Links** and create a new link.
+3. Add a donation-style product such as "Buy me a coffee". For flexible support,
+   enable customer-adjustable quantity or create a few fixed donation prices.
+4. Copy the published payment link URL. The current donation link is
+   `https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00`.
+5. For local development, set it in `frontend/.env`:
+
+```env
+VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
+VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
+```
+
+6. Save the creator photo as `frontend/public/emilio-banqueri.jpg`, or set
+   `VITE_CREATOR_PHOTO_URL` to another public image URL.
+7. For production, add the same `VITE_DONATION_URL` and
+   `VITE_CREATOR_PHOTO_URL` values in Cloudflare Pages under
+   **Settings -> Environment variables -> Production**, then rebuild the
+   frontend. Vite bakes these values into the deployed site at build time.
 
 ### Troubleshooting
 

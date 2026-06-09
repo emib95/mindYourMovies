@@ -204,7 +204,8 @@ legend,
 }
 
 button,
-.recommendation a {
+.recommendation a,
+.donation-section a {
   align-items: center;
   background: var(--accent);
   border: 0;
@@ -263,6 +264,70 @@ button:disabled {
   margin: 0 0 8px;
 }
 
+.donation-section {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.creator-card {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.creator-photo {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  flex: 0 0 auto;
+  height: 96px;
+  object-fit: cover;
+  width: 96px;
+}
+
+.creator-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.donation-section .eyebrow {
+  margin-bottom: 0;
+}
+
+.donation-section h2 {
+  margin-bottom: 0;
+}
+
+.creator-name {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.donation-section a {
+  background: transparent;
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.donation-action {
+  flex: 0 0 auto;
+}
+
+.donation-muted {
+  color: var(--text);
+  flex: 0 0 auto;
+  font-size: 0.92rem;
+  max-width: 280px;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     padding: 36px 18px;
@@ -297,5 +362,20 @@ button:disabled {
 
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+
+  .donation-section {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .creator-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .creator-photo {
+    height: 84px;
+    width: 84px;
   }
 }
