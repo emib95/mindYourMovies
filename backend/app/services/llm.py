@@ -16,6 +16,17 @@ FALLBACK_REASONS = {
     "es": "Elegida entre opciones disponibles en {region} usando tus plataformas y preferencias.",
 }
 
+FALLBACK_WHY_RECOMMENDED = {
+    "en": (
+        "It is available in {region} from your selected providers and scored best "
+        "against the mood, group, and notes you shared."
+    ),
+    "es": (
+        "Esta disponible en {region} en las plataformas seleccionadas y fue la "
+        "mejor coincidencia con el ambiente, el grupo y las notas que compartiste."
+    ),
+}
+
 
 class RecommendationEngine:
     def __init__(self, settings: Settings):
@@ -44,8 +55,13 @@ class RecommendationEngine:
                             "You help people stop scrolling and pick one movie. "
                             "Choose exactly one title from the candidate list. "
                             "Respect the user's allow_extra_costs preference when explaining the choice. "
-                            "Return JSON only with movie_title, provider, watch_link, and reason. "
-                            f"Write the reason in {LANGUAGE_LABELS[recommendation_request.language]}. "
+                            "Return JSON only with movie_title, provider, watch_link, reason, "
+                            "and why_recommended. Use reason as a short summary. "
+                            "Use why_recommended to explain in one or two sentences why this "
+                            "movie fits the user's mood, group context, notes, selected providers, "
+                            "region, and extra-cost preference. "
+                            "Write reason and why_recommended in "
+                            f"{LANGUAGE_LABELS[recommendation_request.language]}. "
                             "Do not invent titles or links."
                         ),
                     },
@@ -80,14 +96,21 @@ class RecommendationEngine:
         if selected is None:
             return self._fallback_recommendation(recommendation_request, candidates)
 
+        fallback_reason = FALLBACK_REASONS[recommendation_request.language].format(
+            region=self._region(recommendation_request),
+        )
+        reason = self._clean_text(llm_payload.get("reason")) or fallback_reason
+        why_recommended = (
+            self._clean_text(llm_payload.get("why_recommended"))
+            or reason
+        )
+
         return RecommendationResponse(
             movie_title=selected.title,
             provider=str(llm_payload.get("provider") or ", ".join(selected.provider_names)),
             watch_link=selected.watch_link,
-            reason=str(
-                llm_payload.get("reason")
-                or "This best matches the mood and provider options you shared."
-            ),
+            reason=reason,
+            why_recommended=why_recommended,
             tmdb_id=selected.tmdb_id,
             region=self._region(recommendation_request),
             language=recommendation_request.language,
@@ -105,6 +128,9 @@ class RecommendationEngine:
             provider=", ".join(selected.provider_names),
             watch_link=selected.watch_link,
             reason=FALLBACK_REASONS[recommendation_request.language].format(region=region),
+            why_recommended=FALLBACK_WHY_RECOMMENDED[
+                recommendation_request.language
+            ].format(region=region),
             tmdb_id=selected.tmdb_id,
             region=region,
             language=recommendation_request.language,
@@ -143,6 +169,11 @@ class RecommendationEngine:
             if candidate.title.lower() == normalized_title:
                 return candidate
         return None
+
+    def _clean_text(self, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
     def _region(self, recommendation_request: RecommendationRequest) -> str:
         return recommendation_request.region or self.settings.tmdb_region.upper()
