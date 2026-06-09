@@ -2,7 +2,7 @@ import './App.css'
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 
-type ProviderId = 'netflix' | 'disney' | 'youtube' | 'hbo'
+type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
 
 type Recommendation = {
   movie_title: string
@@ -15,6 +15,7 @@ type Recommendation = {
 const providers: Array<{ id: ProviderId; label: string }> = [
   { id: 'netflix', label: 'Netflix' },
   { id: 'disney', label: 'Disney+' },
+  { id: 'prime', label: 'Prime Video' },
   { id: 'youtube', label: 'YouTube' },
   { id: 'hbo', label: 'HBO / NOW' },
 ]

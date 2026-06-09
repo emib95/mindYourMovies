@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, HttpUrl
 class Provider(str, Enum):
     netflix = "netflix"
     disney = "disney"
+    prime = "prime"
     youtube = "youtube"
     hbo = "hbo"
 
