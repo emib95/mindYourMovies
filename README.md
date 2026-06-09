@@ -70,9 +70,8 @@ npm run dev
 The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
 `http://localhost:8000`.
 
-To enable the small "Buy me a coffee" support section, set
-`VITE_DONATION_URL` to a Stripe Payment Link URL. If this value is empty, the
-section remains visible but does not show a clickable donation button. The
+The small "Buy me a coffee" support section defaults to Emilio's Stripe Payment
+Link. Set `VITE_DONATION_URL` only if the donation URL needs to be changed. The
 creator photo in that section defaults to `/emilio-banqueri.jpg`; place the
 photo in `frontend/public/emilio-banqueri.jpg` or set `VITE_CREATOR_PHOTO_URL`
 to another hosted image URL.
@@ -130,7 +129,7 @@ OPENAI_MODEL=gpt-4.1-mini
 
 ```env
 VITE_API_BASE_URL=https://api.mindyourmovies.com
-VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
+VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
 VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 ```
 
@@ -147,11 +146,12 @@ stored in the frontend or backend.
 2. In Stripe, go to **Payment Links** and create a new link.
 3. Add a donation-style product such as "Buy me a coffee". For flexible support,
    enable customer-adjustable quantity or create a few fixed donation prices.
-4. Copy the published payment link URL.
+4. Copy the published payment link URL. The current donation link is
+   `https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00`.
 5. For local development, set it in `frontend/.env`:
 
 ```env
-VITE_DONATION_URL=https://buy.stripe.com/<your-payment-link>
+VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
 VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 ```
 

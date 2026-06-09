@@ -58,7 +58,10 @@ const regionOptions = [
 const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 ).replace(/\/+$/, '')
-const donationUrl = (import.meta.env.VITE_DONATION_URL ?? '').trim()
+const donationUrl = (
+  import.meta.env.VITE_DONATION_URL ??
+  'https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00'
+).trim()
 const creatorPhotoUrl = (
   import.meta.env.VITE_CREATOR_PHOTO_URL ?? '/emilio-banqueri.jpg'
 ).trim()
