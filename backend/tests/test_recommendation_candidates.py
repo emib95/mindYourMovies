@@ -61,6 +61,16 @@ class TMDbCandidateTests(unittest.TestCase):
         request = make_request("Something like Casablanca for tonight")
 
         self.assertEqual(client._reference_queries(request), ["Casablanca"])
+        self.assertEqual(client._similarity_reference_queries(request), ["Casablanca"])
+
+    def test_extracts_similarity_reference_with_introductory_fillers(self) -> None:
+        client = make_client()
+        request = make_request(
+            "Can I see a similar movie to let's say for instance Shutter Island?"
+        )
+
+        self.assertEqual(client._reference_queries(request), ["Shutter Island"])
+        self.assertEqual(client._similarity_reference_queries(request), ["Shutter Island"])
 
     def test_rejects_generic_mood_as_title_reference(self) -> None:
         client = make_client()
@@ -114,6 +124,37 @@ class TMDbCandidateTests(unittest.TestCase):
         ranked = client._rank_and_limit_candidates(candidates, request, 60)
 
         self.assertEqual(ranked[0].title, "Casablanca")
+
+    def test_similarity_ranking_excludes_reference_title(self) -> None:
+        client = make_client()
+        request = make_request("Something similar to Shutter Island")
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_similarity_ranking_excludes_seed_id_for_misspelled_reference(
+        self,
+    ) -> None:
+        client = make_client()
+        request = make_request("similar movie to Shattered Island")
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(
+            candidates,
+            request,
+            60,
+            excluded_tmdb_ids={11324},
+        )
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
 
     def test_candidate_limit_is_capped_for_llm_prompt_size(self) -> None:
         client = make_client(tmdb_candidate_limit=1000)
