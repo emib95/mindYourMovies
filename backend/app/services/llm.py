@@ -6,6 +6,17 @@ from app.config import Settings
 from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
 
 
+LANGUAGE_LABELS = {
+    "en": "English",
+    "es": "Spanish",
+}
+
+FALLBACK_REASONS = {
+    "en": "Picked from candidates available in {region} using your provider and mood answers.",
+    "es": "Elegida entre opciones disponibles en {region} usando tus plataformas y preferencias.",
+}
+
+
 class RecommendationEngine:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -34,6 +45,7 @@ class RecommendationEngine:
                             "Choose exactly one title from the candidate list. "
                             "Respect the user's allow_extra_costs preference when explaining the choice. "
                             "Return JSON only with movie_title, provider, watch_link, and reason. "
+                            f"Write the reason in {LANGUAGE_LABELS[recommendation_request.language]}. "
                             "Do not invent titles or links."
                         ),
                     },
@@ -41,7 +53,8 @@ class RecommendationEngine:
                         "role": "user",
                         "content": json.dumps(
                             {
-                                "region": self.settings.tmdb_region,
+                                "region": self._region(recommendation_request),
+                                "language": recommendation_request.language,
                                 "user_answers": recommendation_request.model_dump(mode="json"),
                                 "candidates": [
                                     candidate.model_dump(mode="json") for candidate in candidates
@@ -76,6 +89,8 @@ class RecommendationEngine:
                 or "This best matches the mood and provider options you shared."
             ),
             tmdb_id=selected.tmdb_id,
+            region=self._region(recommendation_request),
+            language=recommendation_request.language,
         )
 
     def _fallback_recommendation(
@@ -84,12 +99,15 @@ class RecommendationEngine:
         candidates: list[MovieCandidate],
     ) -> RecommendationResponse:
         selected = self._best_keyword_match(recommendation_request, candidates)
+        region = self._region(recommendation_request)
         return RecommendationResponse(
             movie_title=selected.title,
             provider=", ".join(selected.provider_names),
             watch_link=selected.watch_link,
-            reason="Picked from available UK candidates using your provider and mood answers.",
+            reason=FALLBACK_REASONS[recommendation_request.language].format(region=region),
             tmdb_id=selected.tmdb_id,
+            region=region,
+            language=recommendation_request.language,
         )
 
     def _best_keyword_match(
@@ -125,3 +143,6 @@ class RecommendationEngine:
             if candidate.title.lower() == normalized_title:
                 return candidate
         return None
+
+    def _region(self, recommendation_request: RecommendationRequest) -> str:
+        return recommendation_request.region or self.settings.tmdb_region.upper()

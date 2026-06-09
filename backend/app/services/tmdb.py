@@ -22,6 +22,10 @@ PROVIDER_CONFIG: dict[Provider, ProviderConfig] = {
 
 INCLUDED_MONETIZATION_TYPES = ("flatrate", "free", "ads")
 PAID_MONETIZATION_TYPES = ("rent", "buy")
+LANGUAGE_LOCALES = {
+    "en": "en-US",
+    "es": "es-ES",
+}
 
 
 DEMO_CANDIDATES = [
@@ -72,12 +76,14 @@ class TMDbClient:
     async def discover_movies(
         self, recommendation_request: RecommendationRequest
     ) -> list[MovieCandidate]:
+        region = self._region(recommendation_request)
         if not self.settings.tmdb_api_key:
-            return self._demo_candidates(recommendation_request.providers)
+            return self._demo_candidates(recommendation_request.providers, region)
 
         provider_ids = self._provider_ids(recommendation_request.providers)
         provider_names = self._provider_names(recommendation_request.providers)
         monetization_types = self._monetization_types(recommendation_request)
+        language = self._language(recommendation_request, region)
 
         async with httpx.AsyncClient(timeout=12) as client:
             response = await client.get(
@@ -86,10 +92,10 @@ class TMDbClient:
                     "api_key": self.settings.tmdb_api_key,
                     "include_adult": "false",
                     "include_video": "false",
-                    "language": "en-GB",
+                    "language": language,
                     "page": 1,
                     "sort_by": "popularity.desc",
-                    "watch_region": self.settings.tmdb_region,
+                    "watch_region": region,
                     "with_watch_monetization_types": monetization_types,
                     "with_watch_providers": "|".join(str(provider_id) for provider_id in provider_ids),
                 },
@@ -105,20 +111,22 @@ class TMDbClient:
                 release_year=(movie.get("release_date") or "")[:4] or None,
                 rating=movie.get("vote_average"),
                 provider_names=provider_names,
-                watch_link=f"https://www.themoviedb.org/movie/{movie['id']}/watch?locale={self.settings.tmdb_region}",
+                watch_link=f"https://www.themoviedb.org/movie/{movie['id']}/watch?locale={region}",
             )
             for movie in movies
             if movie.get("id")
         ]
 
-    def _demo_candidates(self, providers: list[Provider]) -> list[MovieCandidate]:
+    def _demo_candidates(
+        self, providers: list[Provider], region: str
+    ) -> list[MovieCandidate]:
         selected_labels = set(self._provider_names(providers))
         matching = [
-            candidate
+            self._with_region(candidate, region)
             for candidate in DEMO_CANDIDATES
             if selected_labels.intersection(candidate.provider_names)
         ]
-        return matching or DEMO_CANDIDATES
+        return matching or [self._with_region(candidate, region) for candidate in DEMO_CANDIDATES]
 
     def _provider_ids(self, providers: list[Provider]) -> list[int]:
         ids: list[int] = []
@@ -134,3 +142,18 @@ class TMDbClient:
         if recommendation_request.allow_extra_costs:
             monetization_types.extend(PAID_MONETIZATION_TYPES)
         return "|".join(monetization_types)
+
+    def _region(self, recommendation_request: RecommendationRequest) -> str:
+        return recommendation_request.region or self.settings.tmdb_region.upper()
+
+    def _language(self, recommendation_request: RecommendationRequest, region: str) -> str:
+        if recommendation_request.language == "en" and region == "GB":
+            return "en-GB"
+        return LANGUAGE_LOCALES[recommendation_request.language]
+
+    def _with_region(self, candidate: MovieCandidate, region: str) -> MovieCandidate:
+        return candidate.model_copy(
+            update={
+                "watch_link": f"https://www.themoviedb.org/movie/{candidate.tmdb_id}/watch?locale={region}"
+            }
+        )
