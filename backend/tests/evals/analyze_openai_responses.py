@@ -49,6 +49,12 @@ def analyze_response(
     candidates: list[MovieCandidate],
 ) -> tuple[dict[str, bool], MovieCandidate | None]:
     selected = _candidate_by_title(candidates, response.movie_title)
+    normalized_response_provider = _normalize_provider(response.provider)
+    normalized_candidate_providers = (
+        {_normalize_provider(provider) for provider in selected.provider_names}
+        if selected
+        else set()
+    )
     checks = {
         "required_fields_present": all(
             [
@@ -64,8 +70,12 @@ def analyze_response(
         ),
         "provider_matches_candidate": (
             selected is not None
-            and _normalize_provider(response.provider)
-            in {_normalize_provider(provider) for provider in selected.provider_names}
+            and any(
+                normalized_response_provider == candidate_provider
+                or normalized_response_provider in candidate_provider
+                or candidate_provider in normalized_response_provider
+                for candidate_provider in normalized_candidate_providers
+            )
         ),
         "not_deterministic_fallback": response.reason != FALLBACK_REASON,
     }
@@ -166,6 +176,7 @@ def summarize(results: list[ScenarioAnalysis]) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    configured_settings = Settings()
     parser = argparse.ArgumentParser(
         description="Analyze recommendation responses for 30 OpenAI API scenarios."
     )
@@ -176,12 +187,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+        default=os.getenv("OPENAI_MODEL") or configured_settings.openai_model,
         help="OpenAI model to use for live calls.",
     )
     parser.add_argument(
         "--region",
-        default=os.getenv("TMDB_REGION", "GB"),
+        default=os.getenv("TMDB_REGION") or configured_settings.tmdb_region,
         help="Region included in the OpenAI user payload.",
     )
     parser.add_argument(
@@ -201,7 +212,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    api_key = os.getenv("OPENAI_API_KEY")
+    configured_settings = Settings()
+    api_key = os.getenv("OPENAI_API_KEY") or configured_settings.openai_api_key
     if args.live and not api_key:
         raise SystemExit("OPENAI_API_KEY is required when using --live.")
 
