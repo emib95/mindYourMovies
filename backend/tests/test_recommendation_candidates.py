@@ -156,6 +156,44 @@ class TMDbCandidateTests(unittest.TestCase):
 
         self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
 
+    def test_ranking_excludes_requested_movie_id(self) -> None:
+        client = make_client()
+        request = make_request("tense thriller").model_copy(
+            update={"excluded_tmdb_ids": [11324]}
+        )
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_ranking_excludes_requested_movie_title(self) -> None:
+        client = make_client()
+        request = make_request("tense thriller").model_copy(
+            update={"excluded_movie_titles": ["Shutter Island"]}
+        )
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_demo_candidates_exclude_requested_movie_id(self) -> None:
+        client = make_client(tmdb_api_key=None)
+        request = make_request("something bold").model_copy(
+            update={"excluded_tmdb_ids": [550]}
+        )
+
+        candidates = client._demo_candidates(request, "GB")
+
+        self.assertNotIn("Fight Club", [candidate.title for candidate in candidates])
+
     def test_similarity_ranking_excludes_seed_id_for_misspelled_reference(
         self,
     ) -> None:

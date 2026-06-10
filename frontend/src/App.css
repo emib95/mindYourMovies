@@ -264,6 +264,19 @@ button:disabled {
   margin: 0 0 8px;
 }
 
+.recommendation-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.recommendation .secondary-action {
+  background: var(--panel-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
 .donation-section {
   align-items: center;
   border-top: 1px solid var(--border);

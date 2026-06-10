@@ -201,7 +201,7 @@ class TMDbClient:
     ) -> list[MovieCandidate]:
         region = self._region(recommendation_request)
         if not self.settings.tmdb_api_key:
-            return self._demo_candidates(recommendation_request.providers, region)
+            return self._demo_candidates(recommendation_request, region)
 
         provider_ids = self._provider_ids(recommendation_request.providers)
         language = self._language(recommendation_request, region)
@@ -480,15 +480,17 @@ class TMDbClient:
         limit: int,
         excluded_tmdb_ids: Iterable[int] = (),
     ) -> list[MovieCandidate]:
-        excluded_ids = set(excluded_tmdb_ids)
+        excluded_ids = set(excluded_tmdb_ids).union(
+            recommendation_request.excluded_tmdb_ids
+        )
         excluded_titles = {
             self._normalized_text(query)
             for query in self._similarity_reference_queries(recommendation_request)
-        }
+        }.union(self._excluded_movie_titles(recommendation_request))
         deduped_candidates = [
             candidate
             for candidate in self._dedupe_candidates(candidates)
-            if not self._is_excluded_similarity_candidate(
+            if not self._is_excluded_candidate(
                 candidate,
                 excluded_ids,
                 excluded_titles,
@@ -540,20 +542,25 @@ class TMDbClient:
         )
 
     def _demo_candidates(
-        self, providers: list[Provider], region: str
+        self, recommendation_request: RecommendationRequest, region: str
     ) -> list[MovieCandidate]:
-        selected_labels = set(self._provider_names(providers))
-        matching = [
-            self._with_region(candidate, region)
-            for candidate in DEMO_CANDIDATES
-            if selected_labels.intersection(candidate.provider_names)
-            and self._candidate_passes_quality_threshold(candidate)
-        ]
-        return matching or [
+        selected_labels = set(self._provider_names(recommendation_request.providers))
+        eligible_candidates = [
             self._with_region(candidate, region)
             for candidate in DEMO_CANDIDATES
             if self._candidate_passes_quality_threshold(candidate)
+            and not self._is_excluded_candidate(
+                candidate,
+                set(recommendation_request.excluded_tmdb_ids),
+                self._excluded_movie_titles(recommendation_request),
+            )
         ]
+        matching = [
+            candidate
+            for candidate in eligible_candidates
+            if selected_labels.intersection(candidate.provider_names)
+        ]
+        return matching or eligible_candidates
 
     def _provider_ids(self, providers: list[Provider]) -> list[int]:
         ids: list[int] = []
@@ -635,7 +642,7 @@ class TMDbClient:
 
         return max(movies, key=score)
 
-    def _is_excluded_similarity_candidate(
+    def _is_excluded_candidate(
         self,
         candidate: MovieCandidate,
         excluded_tmdb_ids: set[int],
@@ -649,6 +656,16 @@ class TMDbClient:
             self._is_same_reference_title(title, excluded_title)
             for excluded_title in excluded_titles
         )
+
+    def _excluded_movie_titles(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> set[str]:
+        return {
+            self._normalized_text(title)
+            for title in recommendation_request.excluded_movie_titles
+            if title.strip()
+        }
 
     def _is_same_reference_title(self, title: str, reference_title: str) -> bool:
         if not title or not reference_title:
