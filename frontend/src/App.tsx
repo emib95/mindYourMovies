@@ -13,8 +13,14 @@ type Recommendation = {
   watch_link: string
   reason: string
   why_recommended: string
+  tmdb_id: number | null
   region: string
   language: Language
+}
+
+type ExcludedRecommendation = {
+  tmdbId: number | null
+  title: string
 }
 
 type LocationResponse = {
@@ -126,6 +132,8 @@ const translations = {
     pick: "Tonight's pick",
     whyRecommended: 'Why this recommendation?',
     watchOn: (provider: string) => `Watch on ${provider}`,
+    differentRecommendation:
+      "I've already watched this. Recommend a different movie.",
     donationEyebrow: 'Support',
     donationTitle: 'Buy me a coffee',
     donationCopy:
@@ -201,6 +209,8 @@ const translations = {
     pick: 'La elección de hoy',
     whyRecommended: '¿Por qué esta recomendación?',
     watchOn: (provider: string) => `Ver en ${provider}`,
+    differentRecommendation:
+      'Ya he visto esta pelicula. Recomiendame una diferente.',
     donationEyebrow: 'Apoyo',
     donationTitle: 'Invítame a un café',
     donationCopy:
@@ -246,6 +256,28 @@ const updateLanguageRoute = (
   window.history.pushState(null, '', nextUrl)
 }
 
+const appendExcludedRecommendation = (
+  currentExclusions: ExcludedRecommendation[],
+  recommendation: Recommendation,
+): ExcludedRecommendation[] => {
+  const nextExclusion = {
+    tmdbId: recommendation.tmdb_id,
+    title: recommendation.movie_title,
+  }
+  const exclusionKey = (excluded: ExcludedRecommendation) =>
+    excluded.tmdbId
+      ? `id:${excluded.tmdbId}`
+      : `title:${excluded.title.trim().toLowerCase()}`
+  const nextKey = exclusionKey(nextExclusion)
+
+  return [
+    ...currentExclusions.filter(
+      (excluded) => exclusionKey(excluded) !== nextKey,
+    ),
+    nextExclusion,
+  ].slice(-25)
+}
+
 function App() {
   const initialRouteLanguage = languageFromPath()
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
@@ -262,6 +294,9 @@ function App() {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
     null,
   )
+  const [excludedRecommendations, setExcludedRecommendations] = useState<
+    ExcludedRecommendation[]
+  >([])
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showCreatorPhoto, setShowCreatorPhoto] = useState(
@@ -386,8 +421,9 @@ function App() {
     updateLanguageRoute(newLanguage)
   }
 
-  const submitRecommendationRequest = async (event: FormEvent) => {
-    event.preventDefault()
+  const requestRecommendation = async (
+    exclusions: ExcludedRecommendation[] = [],
+  ) => {
     setError('')
     setRecommendation(null)
     setIsLoading(true)
@@ -406,6 +442,10 @@ function App() {
           allow_extra_costs: allowExtraCosts,
           group_context: groupContext || null,
           notes: notes || null,
+          excluded_tmdb_ids: exclusions
+            .map((excluded) => excluded.tmdbId)
+            .filter((tmdbId): tmdbId is number => typeof tmdbId === 'number'),
+          excluded_movie_titles: exclusions.map((excluded) => excluded.title),
         }),
       })
 
@@ -420,7 +460,8 @@ function App() {
         throw new Error(message ?? t.errors.recommendation)
       }
 
-      setRecommendation(await response.json())
+      setRecommendation((await response.json()) as Recommendation)
+      setExcludedRecommendations(exclusions)
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -430,6 +471,24 @@ function App() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const submitRecommendationRequest = async (event: FormEvent) => {
+    event.preventDefault()
+    setExcludedRecommendations([])
+    await requestRecommendation()
+  }
+
+  const requestDifferentRecommendation = async () => {
+    if (!recommendation) {
+      return
+    }
+
+    const nextExclusions = appendExcludedRecommendation(
+      excludedRecommendations,
+      recommendation,
+    )
+    await requestRecommendation(nextExclusions)
   }
 
   return (
@@ -560,9 +619,19 @@ function App() {
               <h3>{t.whyRecommended}</h3>
               <p>{recommendation.why_recommended}</p>
             </section>
-            <a href={recommendation.watch_link} rel="noreferrer" target="_blank">
-              {t.watchOn(recommendation.provider)}
-            </a>
+            <div className="recommendation-actions">
+              <a href={recommendation.watch_link} rel="noreferrer" target="_blank">
+                {t.watchOn(recommendation.provider)}
+              </a>
+              <button
+                className="secondary-action"
+                disabled={isLoading}
+                onClick={requestDifferentRecommendation}
+                type="button"
+              >
+                {isLoading ? t.loading : t.differentRecommendation}
+              </button>
+            </div>
           </article>
         ) : null}
       </section>
