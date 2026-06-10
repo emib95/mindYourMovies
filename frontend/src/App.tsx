@@ -121,7 +121,10 @@ const translations = {
     groupPlaceholder: 'Date night, family, friends who cannot agree...',
     notesLabel: 'Optional comment',
     notesPlaceholder: 'Avoid horror, under two hours, no subtitles tonight...',
-    loading: 'Choosing...',
+    loading: 'Rolling...',
+    loadingTitle: 'Spooling up the projector',
+    loadingDetail:
+      'Threading your mood through the reels to find one movie worth pressing play.',
     submit: 'Recommend one movie',
     pick: "Tonight's pick",
     whyRecommended: 'Why this recommendation?',
@@ -196,7 +199,10 @@ const translations = {
     groupPlaceholder: 'Cita, familia, amigos que no se ponen de acuerdo...',
     notesLabel: 'Comentario opcional',
     notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtitulos hoy...',
-    loading: 'Eligiendo...',
+    loading: 'Rodando...',
+    loadingTitle: 'Preparando el proyector',
+    loadingDetail:
+      'Pasando tu estado de animo por los carretes para encontrar una pelicula que merezca darle al play.',
     submit: 'Recomendar una pelicula',
     pick: 'La eleccion de hoy',
     whyRecommended: 'Por que esta recomendacion?',
@@ -544,12 +550,31 @@ function App() {
             />
           </label>
 
-          <button disabled={!canSubmit} type="submit">
+          <button aria-busy={isLoading} disabled={!canSubmit} type="submit">
             {isLoading ? t.loading : t.submit}
           </button>
         </form>
 
         {error ? <p className="message error">{error}</p> : null}
+
+        {isLoading ? (
+          <section
+            aria-live="polite"
+            className="loading-recommendation"
+            role="status"
+          >
+            <div aria-hidden="true" className="film-loader">
+              <span className="film-reel film-reel-one" />
+              <span className="film-reel film-reel-two" />
+              <span className="film-strip" />
+            </div>
+            <div className="loading-copy">
+              <p className="eyebrow">{t.loading}</p>
+              <h2>{t.loadingTitle}</h2>
+              <p>{t.loadingDetail}</p>
+            </div>
+          </section>
+        ) : null}
 
         {recommendation ? (
           <article className="recommendation">

@@ -233,6 +233,105 @@ button:disabled {
   color: #d92d20;
 }
 
+.loading-recommendation {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(16, 31, 124, 0.12), transparent 58%),
+    var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 24px;
+  display: flex;
+  gap: 20px;
+  margin-top: 28px;
+  overflow: hidden;
+  padding: 22px;
+  position: relative;
+}
+
+.loading-recommendation::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-100%);
+  animation: projector-sweep 2.8s ease-in-out infinite;
+}
+
+.film-loader {
+  flex: 0 0 auto;
+  height: 76px;
+  position: relative;
+  width: 112px;
+  z-index: 1;
+}
+
+.film-reel {
+  background:
+    radial-gradient(circle, var(--panel-bg) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 18%, var(--panel-bg) 0 8%, transparent 9%),
+    radial-gradient(circle at 82% 50%, var(--panel-bg) 0 8%, transparent 9%),
+    radial-gradient(circle at 50% 82%, var(--panel-bg) 0 8%, transparent 9%),
+    radial-gradient(circle at 18% 50%, var(--panel-bg) 0 8%, transparent 9%),
+    conic-gradient(
+      from 12deg,
+      var(--accent),
+      var(--accent-border),
+      var(--accent)
+    );
+  border: 2px solid var(--accent-border);
+  border-radius: 50%;
+  box-shadow: var(--shadow);
+  height: 54px;
+  position: absolute;
+  top: 0;
+  width: 54px;
+  animation: reel-spin 1.15s linear infinite;
+}
+
+.film-reel-one {
+  left: 0;
+}
+
+.film-reel-two {
+  animation-direction: reverse;
+  right: 0;
+}
+
+.film-strip {
+  background:
+    linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 14px) 0 0 /
+      14px 8px repeat-x,
+    linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 14px) 0 100% /
+      14px 8px repeat-x,
+    linear-gradient(var(--accent-border), var(--accent-border));
+  border-radius: 8px;
+  bottom: 4px;
+  height: 28px;
+  left: 8px;
+  position: absolute;
+  right: 8px;
+  transform: rotate(-4deg);
+}
+
+.loading-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.loading-copy .eyebrow {
+  margin-bottom: 8px;
+}
+
+.loading-copy h2 {
+  margin-bottom: 8px;
+}
+
 .recommendation {
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
@@ -364,6 +463,11 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .loading-recommendation {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .donation-section {
     align-items: flex-start;
     flex-direction: column;
@@ -377,5 +481,29 @@ button:disabled {
   .creator-photo {
     height: 84px;
     width: 84px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-reel,
+  .loading-recommendation::after {
+    animation: none;
+  }
+}
+
+@keyframes reel-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes projector-sweep {
+  0%,
+  45% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
   }
 }
