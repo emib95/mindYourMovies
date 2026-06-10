@@ -5,6 +5,7 @@ from openai import AsyncOpenAI, OpenAIError
 
 from app.config import Settings
 from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
+from app.timing import StepTimer
 
 
 LANGUAGE_LABELS = {
@@ -102,10 +103,13 @@ class RecommendationEngine:
         recommendation_request: RecommendationRequest,
         candidates: list[MovieCandidate],
     ) -> RecommendationResponse:
+        timer = StepTimer(__name__, "llm_selection")
         if not candidates:
             raise ValueError("At least one movie candidate is required.")
 
         if not self.settings.openai_api_key:
+            timer.mark("fallback_no_openai_key", candidate_count=len(candidates))
+            timer.finish()
             return self._fallback_recommendation(recommendation_request, candidates)
 
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
@@ -191,12 +195,17 @@ class RecommendationEngine:
                 },
             )
         except OpenAIError:
+            timer.mark("fallback_openai_error", candidate_count=len(candidates))
+            timer.finish()
             return self._fallback_recommendation(recommendation_request, candidates)
+        timer.mark("openai_response", candidate_count=len(candidates))
 
         content = self._response_text(response)
         try:
             llm_payload = json.loads(content)
         except json.JSONDecodeError:
+            timer.mark("fallback_invalid_json")
+            timer.finish()
             return self._fallback_recommendation(recommendation_request, candidates)
 
         selected = self._candidate_by_title(
@@ -204,6 +213,8 @@ class RecommendationEngine:
             str(llm_payload.get("movie_title", "")),
         )
         if selected is None:
+            timer.mark("fallback_unknown_title", title=llm_payload.get("movie_title"))
+            timer.finish()
             return self._fallback_recommendation(recommendation_request, candidates)
 
         fallback_reason = FALLBACK_REASONS[recommendation_request.language].format(
@@ -215,7 +226,7 @@ class RecommendationEngine:
             or reason
         )
 
-        return RecommendationResponse(
+        response = RecommendationResponse(
             movie_title=selected.title,
             provider=str(llm_payload.get("provider") or ", ".join(selected.provider_names)),
             watch_link=self._watch_link(llm_payload.get("watch_link"), selected),
@@ -225,6 +236,9 @@ class RecommendationEngine:
             region=self._region(recommendation_request),
             language=recommendation_request.language,
         )
+        timer.mark("validation", movie=response.movie_title)
+        timer.finish()
+        return response
 
     def _fallback_recommendation(
         self,
