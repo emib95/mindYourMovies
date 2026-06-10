@@ -1,17 +1,22 @@
 .app-shell {
-  display: flex;
-  flex-direction: column;
+  box-sizing: border-box;
+  display: grid;
   gap: 32px;
+  grid-template-areas:
+    "controls"
+    "hero"
+    "panel"
+    "donation";
   padding: 56px 28px;
   text-align: left;
 }
 
 .top-controls {
   align-items: flex-start;
-  align-self: flex-end;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
+  grid-area: controls;
   justify-content: flex-end;
   max-width: 100%;
 }
@@ -85,6 +90,7 @@
 .hero {
   display: grid;
   gap: 20px;
+  grid-area: hero;
   max-width: 760px;
 }
 
@@ -116,6 +122,7 @@
   border: 1px solid var(--border);
   border-radius: 28px;
   box-shadow: var(--shadow);
+  grid-area: panel;
   padding: 28px;
 }
 
@@ -270,6 +277,7 @@ button:disabled {
   color: var(--text);
   display: flex;
   gap: 20px;
+  grid-area: donation;
   justify-content: space-between;
   padding-top: 8px;
 }
@@ -326,6 +334,100 @@ button:disabled {
   flex: 0 0 auto;
   font-size: 0.92rem;
   max-width: 280px;
+}
+
+@media (min-width: 900px) {
+  .app-shell {
+    align-items: start;
+    column-gap: 48px;
+    grid-template-areas:
+      "hero controls"
+      "panel panel"
+      "donation donation";
+    grid-template-columns: minmax(0, 1fr) minmax(310px, 0.86fr);
+    padding-block: 64px 48px;
+  }
+
+  .top-controls {
+    align-content: start;
+    justify-self: end;
+  }
+
+  .language-switcher {
+    flex: 0 0 auto;
+  }
+
+  .location-control {
+    width: min(100%, 360px);
+  }
+
+  .hero {
+    align-self: center;
+    max-width: 620px;
+    padding-top: 24px;
+  }
+
+  .hero-logo {
+    width: min(100%, 360px);
+  }
+
+  .panel {
+    padding: 32px;
+  }
+
+  form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  fieldset,
+  .paid-option,
+  .field:has(textarea),
+  form button {
+    grid-column: 1 / -1;
+  }
+
+  .provider-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  form button {
+    justify-self: start;
+    min-width: 260px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1120px) {
+  .app-shell {
+    column-gap: 32px;
+    padding-inline: 40px;
+  }
+
+  .hero {
+    max-width: 540px;
+  }
+
+  .hero-logo {
+    width: min(100%, 320px);
+  }
+}
+
+@media (min-width: 761px) and (max-width: 899px) {
+  .app-shell {
+    padding-inline: 40px;
+  }
+
+  .top-controls {
+    align-self: stretch;
+    justify-content: space-between;
+  }
+
+  .location-control {
+    flex: 1 1 320px;
+  }
+
+  .hero {
+    max-width: 680px;
+  }
 }
 
 @media (max-width: 760px) {
