@@ -89,7 +89,7 @@ def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:
     region = recommendation_request.region or settings.tmdb_region.upper()
     if recommendation_request.language == "es":
         return (
-            "No se encontraron peliculas que cumplan los filtros de disponibilidad "
+            "No se encontraron películas que cumplan los filtros de disponibilidad "
             f"y calidad para esas plataformas en {region}."
         )
     return (
@@ -102,7 +102,7 @@ def _no_included_movies_detail(recommendation_request: RecommendationRequest) ->
     region = recommendation_request.region or settings.tmdb_region.upper()
     if recommendation_request.language == "es":
         return (
-            "No se encontraron peliculas incluidas, gratis o con anuncios que "
+            "No se encontraron películas incluidas, gratis o con anuncios que "
             "cumplan los filtros de calidad para "
             f"esas plataformas en {region}. Prueba permitiendo alquileres o compras."
         )
