@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     geolocation_api_url: str = "https://ipwho.is/{ip}?fields=success,country_code"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
+    llm_first_timeout_seconds: float = 60.0
+    llm_first_max_batches: int = 3
 
     model_config = SettingsConfigDict(
         env_file=".env",

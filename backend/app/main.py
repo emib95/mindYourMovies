@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from httpx import HTTPError
 
 from app.config import get_settings
 from app.schemas import LocationResponse, RecommendationRequest, RecommendationResponse
+from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.location import LocationResolver
 from app.services.tmdb import TMDbClient
@@ -62,6 +65,61 @@ async def create_recommendation(
             update={"region": location.region}
         )
 
+    llm_first_response = await _try_llm_first_recommendation(recommendation_request)
+    if llm_first_response is not None:
+        return llm_first_response
+
+    return await _tmdb_first_recommendation(recommendation_request)
+
+
+async def _try_llm_first_recommendation(
+    recommendation_request: RecommendationRequest,
+) -> RecommendationResponse | None:
+    if not settings.openai_api_key:
+        return None
+
+    try:
+        return await asyncio.wait_for(
+            _llm_first_recommendation(recommendation_request),
+            timeout=settings.llm_first_timeout_seconds,
+        )
+    except (HTTPError, ValueError, asyncio.TimeoutError):
+        return None
+
+
+async def _llm_first_recommendation(
+    recommendation_request: RecommendationRequest,
+) -> RecommendationResponse | None:
+    seen_titles = set(recommendation_request.excluded_movie_titles)
+
+    for _ in range(max(1, settings.llm_first_max_batches)):
+        suggestions = await recommendation_engine.suggest_movies(
+            recommendation_request,
+            seen_titles,
+        )
+        if not suggestions:
+            return None
+
+        for suggestion in suggestions:
+            seen_titles.add(suggestion.movie_title)
+            candidate = await tmdb_client.available_candidate_for_title(
+                suggestion.movie_title,
+                recommendation_request,
+            )
+            if candidate is None:
+                continue
+            return await recommendation_engine.recommendation_from_suggestion(
+                recommendation_request,
+                _suggestion_with_verified_title(suggestion, candidate.title),
+                candidate,
+            )
+
+    return None
+
+
+async def _tmdb_first_recommendation(
+    recommendation_request: RecommendationRequest,
+) -> RecommendationResponse:
     try:
         candidates = await tmdb_client.discover_movies(recommendation_request)
     except HTTPError as exc:
@@ -83,6 +141,21 @@ async def create_recommendation(
         return await recommendation_engine.recommend(recommendation_request, candidates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _suggestion_with_verified_title(
+    suggestion: LLMRecommendationSuggestion,
+    verified_title: str,
+) -> LLMRecommendationSuggestion:
+    if suggestion.movie_title == verified_title:
+        return suggestion
+    return LLMRecommendationSuggestion(
+        movie_title=verified_title,
+        provider=suggestion.provider,
+        watch_link=suggestion.watch_link,
+        reason=suggestion.reason,
+        why_recommended=suggestion.why_recommended,
+    )
 
 
 def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:

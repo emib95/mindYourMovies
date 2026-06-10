@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from urllib.parse import quote_plus, urlparse
 
 from openai import AsyncOpenAI, OpenAIError
@@ -92,10 +93,165 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
     ],
 }
 
+RECOMMENDATION_SUGGESTIONS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "recommendations": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "movie_title": {"type": "string"},
+                    "provider": {"type": "string"},
+                    "watch_link": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "why_recommended": {"type": "string"},
+                },
+                "required": [
+                    "movie_title",
+                    "provider",
+                    "watch_link",
+                    "reason",
+                    "why_recommended",
+                ],
+            },
+        },
+    },
+    "required": ["recommendations"],
+}
+
+WATCH_LINK_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "watch_link": {"type": "string"},
+    },
+    "required": ["watch_link"],
+}
+
+
+@dataclass(frozen=True)
+class LLMRecommendationSuggestion:
+    movie_title: str
+    provider: str
+    watch_link: str
+    reason: str
+    why_recommended: str
+
 
 class RecommendationEngine:
     def __init__(self, settings: Settings):
         self.settings = settings
+
+    async def suggest_movies(
+        self,
+        recommendation_request: RecommendationRequest,
+        excluded_titles: set[str],
+    ) -> list[LLMRecommendationSuggestion]:
+        if not self.settings.openai_api_key:
+            return []
+
+        client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        try:
+            response = await client.responses.create(
+                model=self.settings.openai_model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You recommend movies for a user who wants one thing to "
+                            "watch now. Use web search to identify exactly five "
+                            "distinct movie titles that match the user's request and "
+                            "are available in the requested country on one of the "
+                            "selected streaming providers. Interpret niche requests "
+                            "semantically, including directors, national cinemas, "
+                            "auteurs, eras, languages, and specific styles. For "
+                            "example, a Sorrentino request means films by or closely "
+                            "connected to Paolo Sorrentino, and an Italian movie "
+                            "request should prioritize Italian films rather than only "
+                            "mainstream English-language films. Respect the user's "
+                            "extra-cost preference: when false, avoid titles that are "
+                            "only rent or buy. Return the best recommendation first. "
+                            "Do not include excluded titles. Prefer official provider "
+                            "title URLs for watch_link when you can verify them; use "
+                            "an empty string if you cannot find one. Return JSON only."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "region": self._region(recommendation_request),
+                                "language": recommendation_request.language,
+                                "selected_providers": [
+                                    provider.value
+                                    for provider in recommendation_request.providers
+                                ],
+                                "allow_extra_costs": (
+                                    recommendation_request.allow_extra_costs
+                                ),
+                                "user_answers": recommendation_request.model_dump(
+                                    mode="json"
+                                ),
+                                "excluded_titles": sorted(excluded_titles),
+                                "response_language": LANGUAGE_LABELS[
+                                    recommendation_request.language
+                                ],
+                            }
+                        ),
+                    },
+                ],
+                tools=[
+                    {
+                        "type": "web_search",
+                        "search_context_size": "medium",
+                        "user_location": {
+                            "type": "approximate",
+                            "country": self._region(recommendation_request),
+                        },
+                    }
+                ],
+                tool_choice="required",
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "movie_recommendation_suggestions",
+                        "schema": RECOMMENDATION_SUGGESTIONS_SCHEMA,
+                        "strict": True,
+                    }
+                },
+            )
+        except OpenAIError:
+            return []
+
+        content = self._response_text(response)
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            return []
+
+        suggestions: list[LLMRecommendationSuggestion] = []
+        for item in payload.get("recommendations", []):
+            if not isinstance(item, dict):
+                continue
+            title = self._clean_text(item.get("movie_title"))
+            if not title:
+                continue
+            suggestions.append(
+                LLMRecommendationSuggestion(
+                    movie_title=title,
+                    provider=self._clean_text(item.get("provider")),
+                    watch_link=self._clean_text(item.get("watch_link")),
+                    reason=self._clean_text(item.get("reason")),
+                    why_recommended=self._clean_text(item.get("why_recommended")),
+                )
+            )
+
+        return suggestions[:5]
 
     async def recommend(
         self,
@@ -226,6 +382,37 @@ class RecommendationEngine:
             language=recommendation_request.language,
         )
 
+    async def recommendation_from_suggestion(
+        self,
+        recommendation_request: RecommendationRequest,
+        suggestion: LLMRecommendationSuggestion,
+        selected: MovieCandidate,
+    ) -> RecommendationResponse:
+        fallback_reason = FALLBACK_REASONS[recommendation_request.language].format(
+            region=self._region(recommendation_request),
+        )
+        reason = self._clean_text(suggestion.reason) or fallback_reason
+        why_recommended = (
+            self._clean_text(suggestion.why_recommended)
+            or reason
+        )
+        watch_link = await self._watch_link_for_suggestion(
+            recommendation_request,
+            suggestion,
+            selected,
+        )
+
+        return RecommendationResponse(
+            movie_title=selected.title,
+            provider=self._verified_provider(suggestion.provider, selected),
+            watch_link=watch_link,
+            reason=reason,
+            why_recommended=why_recommended,
+            tmdb_id=selected.tmdb_id,
+            region=self._region(recommendation_request),
+            language=recommendation_request.language,
+        )
+
     def _fallback_recommendation(
         self,
         recommendation_request: RecommendationRequest,
@@ -300,6 +487,107 @@ class RecommendationEngine:
         if self._is_supported_provider_url(link):
             return link
         return self._provider_search_link(candidate)
+
+    async def _watch_link_for_suggestion(
+        self,
+        recommendation_request: RecommendationRequest,
+        suggestion: LLMRecommendationSuggestion,
+        candidate: MovieCandidate,
+    ) -> str:
+        link = self._clean_text(suggestion.watch_link)
+        if self._is_supported_provider_url(link):
+            return link
+
+        direct_link = await self._find_direct_watch_link(
+            recommendation_request,
+            candidate,
+            suggestion.provider,
+        )
+        if direct_link:
+            return direct_link
+
+        return self._provider_search_link(candidate)
+
+    async def _find_direct_watch_link(
+        self,
+        recommendation_request: RecommendationRequest,
+        candidate: MovieCandidate,
+        provider: str,
+    ) -> str:
+        if not self.settings.openai_api_key:
+            return ""
+
+        client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        try:
+            response = await client.responses.create(
+                model=self.settings.openai_model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Use web search to find the official streaming-provider "
+                            "title page for this movie in the requested country. "
+                            "Return an empty string if you cannot verify a direct "
+                            "official provider URL. Do not return TMDb, JustWatch, "
+                            "Reelgood, IMDb, Rotten Tomatoes, or search engine pages."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "movie_title": candidate.title,
+                                "tmdb_id": candidate.tmdb_id,
+                                "region": self._region(recommendation_request),
+                                "verified_providers": candidate.provider_names,
+                                "suggested_provider": provider,
+                            }
+                        ),
+                    },
+                ],
+                tools=[
+                    {
+                        "type": "web_search",
+                        "search_context_size": "medium",
+                        "user_location": {
+                            "type": "approximate",
+                            "country": self._region(recommendation_request),
+                        },
+                    }
+                ],
+                tool_choice="required",
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "movie_watch_link",
+                        "schema": WATCH_LINK_RESPONSE_SCHEMA,
+                        "strict": True,
+                    }
+                },
+            )
+        except OpenAIError:
+            return ""
+
+        try:
+            payload = json.loads(self._response_text(response))
+        except json.JSONDecodeError:
+            return ""
+
+        link = self._clean_text(payload.get("watch_link"))
+        if self._is_supported_provider_url(link):
+            return link
+        return ""
+
+    def _verified_provider(
+        self,
+        suggested_provider: str,
+        selected: MovieCandidate,
+    ) -> str:
+        normalized_suggestion = suggested_provider.strip().lower()
+        for provider_name in selected.provider_names:
+            if provider_name.lower() == normalized_suggestion:
+                return provider_name
+        return ", ".join(selected.provider_names)
 
     def _is_supported_provider_url(self, link: str) -> bool:
         if not link:

@@ -2,8 +2,8 @@
 
 MindYourMovies is a full-stack skeleton for reducing movie-night indecision. The
 React TypeScript frontend asks a few focused questions, and the FastAPI backend
-uses UK TMDb availability plus an LLM to return exactly one movie recommendation
-with a watch link.
+uses an LLM plus TMDb availability checks to return exactly one movie
+recommendation with a watch link.
 
 ## Stack
 
@@ -54,6 +54,10 @@ Set these values in `backend/.env`:
   defaulting to `60`.
 - `OPENAI_API_KEY`: LLM API key used to choose the final movie.
 - `OPENAI_MODEL`: Model name, defaulting to `gpt-4.1-mini`.
+- `LLM_FIRST_TIMEOUT_SECONDS`: maximum time for the OpenAI-first path before
+  falling back to the TMDb-first workflow, defaulting to `60`.
+- `LLM_FIRST_MAX_BATCHES`: maximum five-title OpenAI batches to verify before
+  falling back, defaulting to `3`.
 
 If keys are not configured, the backend returns a deterministic recommendation
 from demo candidates so the frontend can still be exercised.
@@ -191,14 +195,17 @@ VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 or purchases. Set it to `true` to include rent/buy options such as many YouTube
 movies.
 
-The backend also filters TMDb candidates by rating and vote count before asking
-the LLM to choose. It searches for explicit title/reference requests, expands
-from TMDb similar/recommended movies, uses classic-aware discovery when the
-prompt asks for cinema classics or masterpieces, and sends up to 60 ranked
-candidates to the LLM. The LLM receives each candidate's rating, vote count, and
-popularity so it can favor movies with stronger audience signals. The OpenAI
-request uses web search to find an official provider deep link, or an official
-provider search page when a title page is not available.
+The backend first asks OpenAI with web search for five movies that match the
+prompt and should be available in the selected country/providers, then verifies
+each title against TMDb watch availability before returning it. If no suggested
+title verifies, the backend requests another five-title batch up to the configured
+batch limit. If the OpenAI-first path fails or exceeds the timeout, the backend
+falls back to the original TMDb-first workflow: it searches for explicit
+title/reference requests, expands from TMDb similar/recommended movies, uses
+classic-aware discovery when the prompt asks for cinema classics or masterpieces,
+and sends up to 60 ranked candidates to the LLM. OpenAI web search is also used
+to find an official provider deep link, or an official provider search page when
+a title page is not available.
 
 Response:
 

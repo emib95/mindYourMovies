@@ -1,7 +1,8 @@
 # MindYourMovies backend
 
-FastAPI backend that gathers region-specific movie candidates from TMDb and asks
-an LLM to choose a single recommendation.
+FastAPI backend that asks an LLM for region-specific movie ideas, verifies them
+against TMDb watch availability, and falls back to the original TMDb-first
+candidate flow when needed.
 
 ## Setup
 
@@ -31,6 +32,10 @@ The server starts on `http://localhost:8000`.
 - `OPENAI_API_KEY`: optional for local development; without it, a deterministic
   demo recommendation is returned.
 - `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
+- `LLM_FIRST_TIMEOUT_SECONDS`: maximum time for the OpenAI-first path before
+  falling back to the TMDb-first workflow, defaulting to `60`.
+- `LLM_FIRST_MAX_BATCHES`: maximum five-title OpenAI batches to verify before
+  falling back, defaulting to `3`.
 - `ALLOWED_ORIGINS`: JSON list of frontend origins.
 
 ## Endpoint
@@ -40,8 +45,12 @@ their public IP address, then falls back to `TMDB_REGION`.
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
-paid rentals or purchases. The backend uses title/reference searches, similar
-movies, classic-aware discovery, and provider availability to build a ranked
-candidate list before asking the LLM to choose one movie. The OpenAI request uses
-web search so the response can include an official streaming-provider title page
-or provider search URL instead of a TMDb watch page.
+paid rentals or purchases. The backend first asks OpenAI with web search for five
+matching movies available in the user's country, then checks each title in TMDb
+for the requested country, provider, and monetization type. If none of those
+titles verify, it requests another five-title batch up to the configured batch
+limit. If this OpenAI-first path fails or exceeds the timeout, the endpoint
+falls back to the original flow: title/reference searches, similar movies,
+classic-aware discovery, and provider availability build a ranked TMDb candidate
+list before asking the LLM to choose one movie. OpenAI web search is also used to
+find an official streaming-provider title page when one is not already known.
