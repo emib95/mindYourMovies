@@ -42,4 +42,6 @@ their public IP address, then falls back to `TMDB_REGION`.
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
 paid rentals or purchases. The backend uses title/reference searches, similar
 movies, classic-aware discovery, and provider availability to build a ranked
-candidate list before asking the LLM to choose one movie.
+candidate list before asking the LLM to choose one movie. The OpenAI request uses
+web search so the response can include an official streaming-provider title page
+or provider search URL instead of a TMDb watch page.

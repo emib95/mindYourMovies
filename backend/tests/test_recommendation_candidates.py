@@ -156,6 +156,44 @@ class TMDbCandidateTests(unittest.TestCase):
 
         self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
 
+    def test_ranking_excludes_requested_movie_id(self) -> None:
+        client = make_client()
+        request = make_request("tense thriller").model_copy(
+            update={"excluded_tmdb_ids": [11324]}
+        )
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_ranking_excludes_requested_movie_title(self) -> None:
+        client = make_client()
+        request = make_request("tense thriller").model_copy(
+            update={"excluded_movie_titles": ["Shutter Island"]}
+        )
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_demo_candidates_exclude_requested_movie_id(self) -> None:
+        client = make_client(tmdb_api_key=None)
+        request = make_request("something bold").model_copy(
+            update={"excluded_tmdb_ids": [550]}
+        )
+
+        candidates = client._demo_candidates(request, "GB")
+
+        self.assertNotIn("Fight Club", [candidate.title for candidate in candidates])
+
     def test_similarity_ranking_excludes_seed_id_for_misspelled_reference(
         self,
     ) -> None:
@@ -232,6 +270,39 @@ class FallbackRecommendationTests(unittest.TestCase):
         selected = engine._best_keyword_match(request, candidates)
 
         self.assertEqual(selected.title, "The Godfather")
+
+    def test_fallback_uses_provider_search_link_instead_of_tmdb(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key=None))
+        request = make_request("something mind bending")
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+        ]
+
+        response = engine._fallback_recommendation(request, candidates)
+
+        self.assertEqual(
+            str(response.watch_link),
+            "https://www.netflix.com/search?q=Shutter+Island",
+        )
+
+    def test_llm_watch_link_rejects_tmdb_link(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        candidate = make_candidate(238, "The Godfather", "1972", 8.7, 20000, 80.0)
+
+        link = engine._watch_link(
+            "https://www.themoviedb.org/movie/238/watch?locale=GB",
+            candidate,
+        )
+
+        self.assertEqual(link, "https://www.netflix.com/search?q=The+Godfather")
+
+    def test_llm_watch_link_accepts_provider_deep_link(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        candidate = make_candidate(238, "The Godfather", "1972", 8.7, 20000, 80.0)
+
+        link = engine._watch_link("https://www.netflix.com/title/60011152", candidate)
+
+        self.assertEqual(link, "https://www.netflix.com/title/60011152")
 
 
 if __name__ == "__main__":

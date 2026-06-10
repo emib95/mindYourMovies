@@ -40,6 +40,16 @@ class RecommendationRequest(BaseModel):
         max_length=1000,
         description="Optional extra preferences, constraints, or comments.",
     )
+    excluded_tmdb_ids: list[int] = Field(
+        default_factory=list,
+        max_length=25,
+        description="TMDb movie IDs that should not be recommended again.",
+    )
+    excluded_movie_titles: list[str] = Field(
+        default_factory=list,
+        max_length=25,
+        description="Movie titles that should not be recommended again.",
+    )
 
     @field_validator("region", mode="before")
     @classmethod
@@ -55,6 +65,39 @@ class RecommendationRequest(BaseModel):
         if value is None:
             return "en"
         return str(value).strip().lower().split("-")[0] or "en"
+
+    @field_validator("excluded_tmdb_ids", mode="before")
+    @classmethod
+    def normalize_excluded_tmdb_ids(cls, value: object) -> list[int]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+
+        normalized: list[int] = []
+        for item in value:
+            try:
+                tmdb_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if tmdb_id > 0 and tmdb_id not in normalized:
+                normalized.append(tmdb_id)
+        return normalized
+
+    @field_validator("excluded_movie_titles", mode="before")
+    @classmethod
+    def normalize_excluded_movie_titles(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+
+        normalized: list[str] = []
+        for item in value:
+            title = str(item).strip()
+            if title and title not in normalized:
+                normalized.append(title)
+        return normalized
 
 
 class MovieCandidate(BaseModel):

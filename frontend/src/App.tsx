@@ -13,8 +13,14 @@ type Recommendation = {
   watch_link: string
   reason: string
   why_recommended: string
+  tmdb_id: number | null
   region: string
   language: Language
+}
+
+type ExcludedRecommendation = {
+  tmdbId: number | null
+  title: string
 }
 
 type LocationResponse = {
@@ -113,7 +119,7 @@ const translations = {
     providerLegend: 'Which providers can you use?',
     paidOption: 'I am willing to pay extra for rentals or purchases.',
     paidOptionHelp:
-      'When unchecked, TMDb results exclude paid rent/buy options such as many YouTube movies.',
+      'When unchecked, results exclude paid rent/buy options such as many YouTube movies.',
     moodLabel: 'What do you feel like watching?',
     moodPlaceholder:
       'Funny, tense thriller, comfort movie, visually stunning...',
@@ -129,6 +135,8 @@ const translations = {
     pick: "Tonight's pick",
     whyRecommended: 'Why this recommendation?',
     watchOn: (provider: string) => `Watch on ${provider}`,
+    differentRecommendation:
+      "I've already watched this. Recommend a different movie.",
     donationEyebrow: 'Support',
     donationTitle: 'Buy me a coffee',
     donationCopy:
@@ -148,79 +156,81 @@ const translations = {
   es: {
     appAlt: 'Mind the Movie',
     languageSwitcherLabel: 'Elegir idioma',
-    title: 'Deja de buscar. Elige una pelicula.',
+    title: 'Deja de buscar. Elige una película.',
     intro:
-      'Dinos que plataformas puedes usar y que les apetece ver. Te sugeriremos una pelicula con una forma sencilla de empezar.',
+      'Dinos qué plataformas puedes usar y qué les apetece ver. Te sugeriremos una película con una forma sencilla de empezar.',
     languageLabel: 'Idioma',
-    locationLabel: 'Ubicacion detectada',
-    changeLocationLabel: 'Cambiar pais de disponibilidad',
-    regionLabel: 'Pais de disponibilidad',
+    locationLabel: 'Ubicación detectada',
+    changeLocationLabel: 'Cambiar país de disponibilidad',
+    regionLabel: 'País de disponibilidad',
     regionHelp: {
-      detecting: 'Detectando tu pais por tu direccion IP...',
+      detecting: 'Detectando tu país por tu dirección IP...',
       detected: (country: string) =>
-        `Ubicacion detectada: ${country}. Puedes cambiarla aqui.`,
+        `Ubicación detectada: ${country}. Puedes cambiarla aquí.`,
       default: (country: string) =>
-        `Usando ${country} como opcion inicial. Puedes cambiarla aqui.`,
+        `Usando ${country} como opción inicial. Puedes cambiarla aquí.`,
       error: (country: string) =>
-        `No pudimos detectar tu pais, asi que ${country} esta seleccionado por ahora. Puedes cambiarlo aqui.`,
+        `No pudimos detectar tu país, así que ${country} está seleccionado por ahora. Puedes cambiarlo aquí.`,
       manual: (country: string) =>
-        `Usando la disponibilidad de ${country}. Puedes cambiarla aqui.`,
+        `Usando la disponibilidad de ${country}. Puedes cambiarla aquí.`,
     },
     languages: {
-      en: 'Ingles',
-      es: 'Espanol',
+      en: 'Inglés',
+      es: 'Español',
     },
     countries: {
       GB: 'Reino Unido',
       US: 'Estados Unidos',
-      ES: 'Espana',
-      MX: 'Mexico',
+      ES: 'España',
+      MX: 'México',
       AR: 'Argentina',
       CO: 'Colombia',
       CL: 'Chile',
-      PE: 'Peru',
-      CA: 'Canada',
+      PE: 'Perú',
+      CA: 'Canadá',
       AU: 'Australia',
       IE: 'Irlanda',
       FR: 'Francia',
       DE: 'Alemania',
       IT: 'Italia',
-      NL: 'Paises Bajos',
+      NL: 'Países Bajos',
       BR: 'Brasil',
     },
-    providerLegend: 'Que plataformas puedes usar?',
+    providerLegend: '¿Qué plataformas puedes usar?',
     paidOption: 'Estoy dispuesto a pagar extra por alquileres o compras.',
     paidOptionHelp:
-      'Si no esta marcada, TMDb excluye opciones de alquiler/compra como muchas peliculas de YouTube.',
-    moodLabel: 'Que te apetece ver?',
+      'Si no está marcada, se excluyen opciones de alquiler/compra como muchas películas de YouTube.',
+    moodLabel: '¿Qué te apetece ver?',
     moodPlaceholder:
-      'Comedia, thriller tenso, pelicula reconfortante, algo visual...',
-    groupLabel: 'Quien va a ver la pelicula?',
+      'Comedia, thriller tenso, película reconfortante, algo visual...',
+    groupLabel: '¿Quién va a ver la película?',
     groupPlaceholder: 'Cita, familia, amigos que no se ponen de acuerdo...',
     notesLabel: 'Comentario opcional',
-    notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtitulos hoy...',
+    notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtítulos hoy...',
     loading: 'Rodando...',
     loadingTitle: 'Preparando el proyector',
     loadingDetail:
-      'Pasando tu estado de animo por los carretes para encontrar una pelicula que merezca darle al play.',
-    submit: 'Recomendar una pelicula',
-    pick: 'La eleccion de hoy',
-    whyRecommended: 'Por que esta recomendacion?',
+      'Pasando tu estado de ánimo por los carretes para encontrar una película que merezca darle al play.',
+    submit: 'Recomendar una película',
+    pick: 'La elección de hoy',
+    whyRecommended: '¿Por qué esta recomendación?',
     watchOn: (provider: string) => `Ver en ${provider}`,
+    differentRecommendation:
+      'Ya he visto esta pelicula. Recomiendame una diferente.',
     donationEyebrow: 'Apoyo',
-    donationTitle: 'Invitame a un cafe',
+    donationTitle: 'Invítame a un café',
     donationCopy:
-      'Si Mind the Movie te ayudo a elegir pelicula, puedes apoyar el proyecto con una pequena donacion.',
+      'Si Mind the Movie te ayudó a elegir película, puedes apoyar el proyecto con una pequeña donación.',
     donationCta: 'Donar con Stripe',
     donationUnavailable:
-      'Las donaciones estaran disponibles cuando se configure un enlace de pago de Stripe.',
+      'Las donaciones estarán disponibles cuando se configure un enlace de pago de Stripe.',
     creatorName: 'Emilio Banqueri',
     creatorBio:
-      'Soy Emilio Banqueri, un desarrollador que quiere que la tecnologia realmente apoye nuestro bienestar. Cree esto porque el scroll automatico y demasiadas opciones pueden afectar silenciosamente nuestra salud mental.',
+      'Soy Emilio Banqueri, un desarrollador que quiere que la tecnología realmente apoye nuestro bienestar. Creé esto porque el scroll automático y demasiadas opciones pueden afectar silenciosamente nuestra salud mental.',
     creatorPhotoAlt: 'Emilio Banqueri',
     errors: {
-      recommendation: 'No se pudo obtener una recomendacion.',
-      generic: 'Algo salio mal al elegir una pelicula.',
+      recommendation: 'No se pudo obtener una recomendación.',
+      generic: 'Algo salió mal al elegir una película.',
     },
   },
 }
@@ -252,6 +262,28 @@ const updateLanguageRoute = (
   window.history.pushState(null, '', nextUrl)
 }
 
+const appendExcludedRecommendation = (
+  currentExclusions: ExcludedRecommendation[],
+  recommendation: Recommendation,
+): ExcludedRecommendation[] => {
+  const nextExclusion = {
+    tmdbId: recommendation.tmdb_id,
+    title: recommendation.movie_title,
+  }
+  const exclusionKey = (excluded: ExcludedRecommendation) =>
+    excluded.tmdbId
+      ? `id:${excluded.tmdbId}`
+      : `title:${excluded.title.trim().toLowerCase()}`
+  const nextKey = exclusionKey(nextExclusion)
+
+  return [
+    ...currentExclusions.filter(
+      (excluded) => exclusionKey(excluded) !== nextKey,
+    ),
+    nextExclusion,
+  ].slice(-25)
+}
+
 function App() {
   const initialRouteLanguage = languageFromPath()
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
@@ -268,6 +300,9 @@ function App() {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
     null,
   )
+  const [excludedRecommendations, setExcludedRecommendations] = useState<
+    ExcludedRecommendation[]
+  >([])
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showCreatorPhoto, setShowCreatorPhoto] = useState(
@@ -392,8 +427,9 @@ function App() {
     updateLanguageRoute(newLanguage)
   }
 
-  const submitRecommendationRequest = async (event: FormEvent) => {
-    event.preventDefault()
+  const requestRecommendation = async (
+    exclusions: ExcludedRecommendation[] = [],
+  ) => {
     setError('')
     setRecommendation(null)
     setIsLoading(true)
@@ -412,6 +448,10 @@ function App() {
           allow_extra_costs: allowExtraCosts,
           group_context: groupContext || null,
           notes: notes || null,
+          excluded_tmdb_ids: exclusions
+            .map((excluded) => excluded.tmdbId)
+            .filter((tmdbId): tmdbId is number => typeof tmdbId === 'number'),
+          excluded_movie_titles: exclusions.map((excluded) => excluded.title),
         }),
       })
 
@@ -426,7 +466,8 @@ function App() {
         throw new Error(message ?? t.errors.recommendation)
       }
 
-      setRecommendation(await response.json())
+      setRecommendation((await response.json()) as Recommendation)
+      setExcludedRecommendations(exclusions)
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -436,6 +477,24 @@ function App() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const submitRecommendationRequest = async (event: FormEvent) => {
+    event.preventDefault()
+    setExcludedRecommendations([])
+    await requestRecommendation()
+  }
+
+  const requestDifferentRecommendation = async () => {
+    if (!recommendation) {
+      return
+    }
+
+    const nextExclusions = appendExcludedRecommendation(
+      excludedRecommendations,
+      recommendation,
+    )
+    await requestRecommendation(nextExclusions)
   }
 
   return (
@@ -585,9 +644,19 @@ function App() {
               <h3>{t.whyRecommended}</h3>
               <p>{recommendation.why_recommended}</p>
             </section>
-            <a href={recommendation.watch_link} rel="noreferrer" target="_blank">
-              {t.watchOn(recommendation.provider)}
-            </a>
+            <div className="recommendation-actions">
+              <a href={recommendation.watch_link} rel="noreferrer" target="_blank">
+                {t.watchOn(recommendation.provider)}
+              </a>
+              <button
+                className="secondary-action"
+                disabled={isLoading}
+                onClick={requestDifferentRecommendation}
+                type="button"
+              >
+                {isLoading ? t.loading : t.differentRecommendation}
+              </button>
+            </div>
           </article>
         ) : null}
       </section>
