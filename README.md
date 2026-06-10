@@ -10,7 +10,7 @@ with a watch link.
 - Frontend: React, TypeScript, Vite
 - Backend: Python, FastAPI, httpx
 - Data source: TMDb watch-provider data for the UK (`TMDB_REGION=GB`)
-- AI selection: OpenAI-compatible chat completion via the `openai` Python SDK
+- AI selection: OpenAI Responses API with web search via the `openai` Python SDK
 
 ## Project structure
 
@@ -196,7 +196,9 @@ the LLM to choose. It searches for explicit title/reference requests, expands
 from TMDb similar/recommended movies, uses classic-aware discovery when the
 prompt asks for cinema classics or masterpieces, and sends up to 60 ranked
 candidates to the LLM. The LLM receives each candidate's rating, vote count, and
-popularity so it can favor movies with stronger audience signals.
+popularity so it can favor movies with stronger audience signals. The OpenAI
+request uses web search to find an official provider deep link, or an official
+provider search page when a title page is not available.
 
 Response:
 
@@ -204,7 +206,7 @@ Response:
 {
   "movie_title": "Example Movie",
   "provider": "Netflix",
-  "watch_link": "https://www.themoviedb.org/movie/123/watch?locale=GB",
+  "watch_link": "https://www.netflix.com/title/123456",
   "reason": "This best fits the requested mood.",
   "why_recommended": "It matches the light tone you asked for and is available from one of your selected providers without an extra rental fee.",
   "tmdb_id": 123

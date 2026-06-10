@@ -233,6 +233,39 @@ class FallbackRecommendationTests(unittest.TestCase):
 
         self.assertEqual(selected.title, "The Godfather")
 
+    def test_fallback_uses_provider_search_link_instead_of_tmdb(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key=None))
+        request = make_request("something mind bending")
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+        ]
+
+        response = engine._fallback_recommendation(request, candidates)
+
+        self.assertEqual(
+            str(response.watch_link),
+            "https://www.netflix.com/search?q=Shutter+Island",
+        )
+
+    def test_llm_watch_link_rejects_tmdb_link(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        candidate = make_candidate(238, "The Godfather", "1972", 8.7, 20000, 80.0)
+
+        link = engine._watch_link(
+            "https://www.themoviedb.org/movie/238/watch?locale=GB",
+            candidate,
+        )
+
+        self.assertEqual(link, "https://www.netflix.com/search?q=The+Godfather")
+
+    def test_llm_watch_link_accepts_provider_deep_link(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        candidate = make_candidate(238, "The Godfather", "1972", 8.7, 20000, 80.0)
+
+        link = engine._watch_link("https://www.netflix.com/title/60011152", candidate)
+
+        self.assertEqual(link, "https://www.netflix.com/title/60011152")
+
 
 if __name__ == "__main__":
     unittest.main()

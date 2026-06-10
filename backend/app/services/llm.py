@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote_plus, urlparse
 
 from openai import AsyncOpenAI, OpenAIError
 
@@ -50,6 +51,46 @@ CLASSIC_INTENT_TERMS = (
     "cine clasico",
     "pelicula clasica",
 )
+STREAMING_PROVIDER_DOMAINS = (
+    "netflix.com",
+    "disneyplus.com",
+    "primevideo.com",
+    "amazon.com",
+    "youtube.com",
+    "youtu.be",
+    "max.com",
+    "hbomax.com",
+    "nowtv.com",
+)
+NON_PROVIDER_DOMAINS = (
+    "themoviedb.org",
+    "tmdb.org",
+    "justwatch.com",
+    "reelgood.com",
+    "imdb.com",
+    "rottentomatoes.com",
+    "google.com",
+    "bing.com",
+)
+
+RECOMMENDATION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "movie_title": {"type": "string"},
+        "provider": {"type": "string"},
+        "watch_link": {"type": "string"},
+        "reason": {"type": "string"},
+        "why_recommended": {"type": "string"},
+    },
+    "required": [
+        "movie_title",
+        "provider",
+        "watch_link",
+        "reason",
+        "why_recommended",
+    ],
+}
 
 
 class RecommendationEngine:
@@ -69,10 +110,9 @@ class RecommendationEngine:
 
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         try:
-            response = await client.chat.completions.create(
+            response = await client.responses.create(
                 model=self.settings.openai_model,
-                response_format={"type": "json_object"},
-                messages=[
+                input=[
                     {
                         "role": "system",
                         "content": (
@@ -94,6 +134,14 @@ class RecommendationEngine:
                             "For classic, masterpiece, or cinema-canon requests, prioritize "
                             "older, highly rated, widely voted films over new releases. "
                             "Respect the user's allow_extra_costs preference when explaining the choice. "
+                            "Use web search to find the official watch page for the chosen "
+                            "movie on one of the selected providers available in the user's "
+                            "region. Prefer a direct title deep link, such as a Netflix, "
+                            "Disney+, Prime Video, YouTube, Max, HBO, or NOW title URL. If "
+                            "a direct title page is not available, use an official provider "
+                            "search page for the movie title. Do not return TMDb, JustWatch, "
+                            "Reelgood, IMDb, Rotten Tomatoes, or search engine result pages "
+                            "as watch_link. "
                             "Return JSON only with movie_title, provider, watch_link, reason, "
                             "and why_recommended. Use reason as a short summary. "
                             "Use why_recommended to explain in one or two sentences why this "
@@ -112,17 +160,40 @@ class RecommendationEngine:
                                 "language": recommendation_request.language,
                                 "user_answers": recommendation_request.model_dump(mode="json"),
                                 "candidates": [
-                                    candidate.model_dump(mode="json") for candidate in candidates
+                                    candidate.model_dump(
+                                        mode="json",
+                                        exclude={"watch_link"},
+                                    )
+                                    for candidate in candidates
                                 ],
                             }
                         ),
                     },
                 ],
+                tools=[
+                    {
+                        "type": "web_search",
+                        "search_context_size": "medium",
+                        "user_location": {
+                            "type": "approximate",
+                            "country": self._region(recommendation_request),
+                        },
+                    }
+                ],
+                tool_choice="required",
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "movie_recommendation",
+                        "schema": RECOMMENDATION_RESPONSE_SCHEMA,
+                        "strict": True,
+                    }
+                },
             )
         except OpenAIError:
             return self._fallback_recommendation(recommendation_request, candidates)
 
-        content = response.choices[0].message.content or "{}"
+        content = self._response_text(response)
         try:
             llm_payload = json.loads(content)
         except json.JSONDecodeError:
@@ -147,7 +218,7 @@ class RecommendationEngine:
         return RecommendationResponse(
             movie_title=selected.title,
             provider=str(llm_payload.get("provider") or ", ".join(selected.provider_names)),
-            watch_link=selected.watch_link,
+            watch_link=self._watch_link(llm_payload.get("watch_link"), selected),
             reason=reason,
             why_recommended=why_recommended,
             tmdb_id=selected.tmdb_id,
@@ -165,7 +236,7 @@ class RecommendationEngine:
         return RecommendationResponse(
             movie_title=selected.title,
             provider=", ".join(selected.provider_names),
-            watch_link=selected.watch_link,
+            watch_link=self._provider_search_link(selected),
             reason=FALLBACK_REASONS[recommendation_request.language].format(region=region),
             why_recommended=FALLBACK_WHY_RECOMMENDED[
                 recommendation_request.language
@@ -223,6 +294,63 @@ class RecommendationEngine:
         if value is None:
             return ""
         return str(value).strip()
+
+    def _watch_link(self, value: object, candidate: MovieCandidate) -> str:
+        link = self._clean_text(value)
+        if self._is_supported_provider_url(link):
+            return link
+        return self._provider_search_link(candidate)
+
+    def _is_supported_provider_url(self, link: str) -> bool:
+        if not link:
+            return False
+
+        parsed = urlparse(link)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+
+        host = parsed.netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+
+        if any(host == domain or host.endswith(f".{domain}") for domain in NON_PROVIDER_DOMAINS):
+            return False
+
+        return any(
+            host == domain or host.endswith(f".{domain}")
+            for domain in STREAMING_PROVIDER_DOMAINS
+        )
+
+    def _provider_search_link(self, candidate: MovieCandidate) -> str:
+        provider_names = " ".join(candidate.provider_names).lower()
+        query = quote_plus(candidate.title)
+
+        if "netflix" in provider_names:
+            return f"https://www.netflix.com/search?q={query}"
+        if "disney" in provider_names:
+            return f"https://www.disneyplus.com/search?q={query}"
+        if "prime" in provider_names or "amazon" in provider_names:
+            return f"https://www.primevideo.com/search/ref=atv_nb_sr?phrase={query}"
+        if "youtube" in provider_names:
+            return f"https://www.youtube.com/results?search_query={query}"
+        if "hbo" in provider_names or "now" in provider_names or "max" in provider_names:
+            return f"https://www.nowtv.com/search?q={query}"
+
+        return f"https://www.google.com/search?q={query}+streaming"
+
+    def _response_text(self, response: object) -> str:
+        output_text = getattr(response, "output_text", None)
+        if output_text:
+            return str(output_text)
+
+        output = getattr(response, "output", [])
+        for item in output:
+            if getattr(item, "type", None) != "message":
+                continue
+            for content in getattr(item, "content", []):
+                if getattr(content, "type", None) == "output_text":
+                    return str(getattr(content, "text", ""))
+        return "{}"
 
     def _region(self, recommendation_request: RecommendationRequest) -> str:
         return recommendation_request.region or self.settings.tmdb_region.upper()
