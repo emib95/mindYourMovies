@@ -22,7 +22,7 @@ FALLBACK_WHY_RECOMMENDED = {
         "against the mood, group, and notes you shared."
     ),
     "es": (
-        "Esta disponible en {region} en las plataformas seleccionadas y fue la "
+        "Está disponible en {region} en las plataformas seleccionadas y fue la "
         "mejor coincidencia con el ambiente, el grupo y las notas que compartiste."
     ),
 }
@@ -41,6 +41,10 @@ CLASSIC_INTENT_TERMS = (
     "canon",
     "acclaimed",
     "obra maestra",
+    "clásico",
+    "clásicos",
+    "cine clásico",
+    "película clásica",
     "clasico",
     "clasicos",
     "cine clasico",
