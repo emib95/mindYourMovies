@@ -113,7 +113,7 @@ const translations = {
     providerLegend: 'Which providers can you use?',
     paidOption: 'I am willing to pay extra for rentals or purchases.',
     paidOptionHelp:
-      'When unchecked, TMDb results exclude paid rent/buy options such as many YouTube movies.',
+      'When unchecked, results exclude paid rent/buy options such as many YouTube movies.',
     moodLabel: 'What do you feel like watching?',
     moodPlaceholder:
       'Funny, tense thriller, comfort movie, visually stunning...',
@@ -188,7 +188,7 @@ const translations = {
     providerLegend: '¿Qué plataformas puedes usar?',
     paidOption: 'Estoy dispuesto a pagar extra por alquileres o compras.',
     paidOptionHelp:
-      'Si no está marcada, TMDb excluye opciones de alquiler/compra como muchas películas de YouTube.',
+      'Si no está marcada, se excluyen opciones de alquiler/compra como muchas películas de YouTube.',
     moodLabel: '¿Qué te apetece ver?',
     moodPlaceholder:
       'Comedia, thriller tenso, película reconfortante, algo visual...',
