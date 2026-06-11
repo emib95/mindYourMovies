@@ -1,10 +1,12 @@
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass
 from urllib.parse import quote_plus, urlparse
 
 from openai import AsyncOpenAI, OpenAIError
 
 from app.config import Settings
+from app.recommendation_trace import get_trace
 from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
 
 
@@ -93,36 +95,7 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
     ],
 }
 
-RECOMMENDATION_SUGGESTIONS_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "recommendations": {
-            "type": "array",
-            "minItems": 5,
-            "maxItems": 5,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "movie_title": {"type": "string"},
-                    "provider": {"type": "string"},
-                    "watch_link": {"type": "string"},
-                    "reason": {"type": "string"},
-                    "why_recommended": {"type": "string"},
-                },
-                "required": [
-                    "movie_title",
-                    "provider",
-                    "watch_link",
-                    "reason",
-                    "why_recommended",
-                ],
-            },
-        },
-    },
-    "required": ["recommendations"],
-}
+RECOMMENDATION_SUGGESTION_SCHEMA = RECOMMENDATION_RESPONSE_SCHEMA
 
 WATCH_LINK_RESPONSE_SCHEMA = {
     "type": "object",
@@ -151,107 +124,145 @@ class RecommendationEngine:
         self,
         recommendation_request: RecommendationRequest,
         excluded_titles: set[str],
+        batch_index: int = 1,
     ) -> list[LLMRecommendationSuggestion]:
         if not self.settings.openai_api_key:
             return []
 
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "openai_suggest_movies",
+                batch=batch_index,
+                model=self.settings.openai_model,
+                region=self._region(recommendation_request),
+            )
+            if trace
+            else nullcontext({})
+        )
+
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         try:
-            response = await client.responses.create(
-                model=self.settings.openai_model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You recommend movies for a user who wants one thing to "
-                            "watch now. Use web search to identify exactly five "
-                            "distinct movie titles that match the user's request and "
-                            "are available in the requested country on one of the "
-                            "selected streaming providers. Interpret niche requests "
-                            "semantically, including directors, national cinemas, "
-                            "auteurs, eras, languages, and specific styles. For "
-                            "example, a Sorrentino request means films by or closely "
-                            "connected to Paolo Sorrentino, and an Italian movie "
-                            "request should prioritize Italian films rather than only "
-                            "mainstream English-language films. Respect the user's "
-                            "extra-cost preference: when false, avoid titles that are "
-                            "only rent or buy. Return the best recommendation first. "
-                            "Do not include excluded titles. Prefer official provider "
-                            "title URLs for watch_link when you can verify them; use "
-                            "an empty string if you cannot find one. Return JSON only."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "region": self._region(recommendation_request),
-                                "language": recommendation_request.language,
-                                "selected_providers": [
-                                    provider.value
-                                    for provider in recommendation_request.providers
-                                ],
-                                "allow_extra_costs": (
-                                    recommendation_request.allow_extra_costs
-                                ),
-                                "user_answers": recommendation_request.model_dump(
-                                    mode="json"
-                                ),
-                                "excluded_titles": sorted(excluded_titles),
-                                "response_language": LANGUAGE_LABELS[
-                                    recommendation_request.language
-                                ],
-                            }
-                        ),
-                    },
-                ],
-                tools=[
-                    {
-                        "type": "web_search",
-                        "search_context_size": "medium",
-                        "user_location": {
-                            "type": "approximate",
-                            "country": self._region(recommendation_request),
+            with stage as details:
+                response = await client.responses.create(
+                    model=self.settings.openai_model,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You recommend movies for a user who wants one thing to "
+                                "watch now. Use web search to identify exactly one movie "
+                                "that matches the user's request and is available in the "
+                                "requested country on one of the selected streaming "
+                                "providers. Interpret niche requests semantically, including "
+                                "directors, national cinemas, auteurs, eras, languages, "
+                                "and specific styles. For example, a Sorrentino request "
+                                "means films by or closely connected to Paolo Sorrentino, "
+                                "and an Italian movie request should prioritize Italian "
+                                "films rather than only mainstream English-language films. "
+                                "Respect the user's extra-cost preference: when false, avoid "
+                                "titles that are only rent or buy. Do not include excluded "
+                                "titles. Prefer official provider title URLs for watch_link "
+                                "when you can verify them; use an empty string if you "
+                                "cannot find one. Return JSON only."
+                            ),
                         },
-                    }
-                ],
-                tool_choice="required",
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "movie_recommendation_suggestions",
-                        "schema": RECOMMENDATION_SUGGESTIONS_SCHEMA,
-                        "strict": True,
-                    }
-                },
-            )
-        except OpenAIError:
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "region": self._region(recommendation_request),
+                                    "language": recommendation_request.language,
+                                    "selected_providers": [
+                                        provider.value
+                                        for provider in recommendation_request.providers
+                                    ],
+                                    "allow_extra_costs": (
+                                        recommendation_request.allow_extra_costs
+                                    ),
+                                    "user_answers": recommendation_request.model_dump(
+                                        mode="json"
+                                    ),
+                                    "excluded_titles": sorted(excluded_titles),
+                                    "response_language": LANGUAGE_LABELS[
+                                        recommendation_request.language
+                                    ],
+                                }
+                            ),
+                        },
+                    ],
+                    tools=[
+                        {
+                            "type": "web_search",
+                            "search_context_size": "medium",
+                            "user_location": {
+                                "type": "approximate",
+                                "country": self._region(recommendation_request),
+                            },
+                        }
+                    ],
+                    tool_choice="required",
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "movie_recommendation_suggestion",
+                            "schema": RECOMMENDATION_SUGGESTION_SCHEMA,
+                            "strict": True,
+                        }
+                    },
+                )
+                details["openai_response_received"] = True
+        except OpenAIError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_suggest_movies",
+                    "failed",
+                    batch=batch_index,
+                    reason="openai_error",
+                    error=str(exc),
+                )
             return []
 
         content = self._response_text(response)
         try:
             payload = json.loads(content)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_suggest_movies",
+                    "failed",
+                    batch=batch_index,
+                    reason="invalid_json",
+                    error=str(exc),
+                    raw_content_preview=content[:200],
+                )
             return []
 
-        suggestions: list[LLMRecommendationSuggestion] = []
-        for item in payload.get("recommendations", []):
-            if not isinstance(item, dict):
-                continue
-            title = self._clean_text(item.get("movie_title"))
-            if not title:
-                continue
-            suggestions.append(
-                LLMRecommendationSuggestion(
-                    movie_title=title,
-                    provider=self._clean_text(item.get("provider")),
-                    watch_link=self._clean_text(item.get("watch_link")),
-                    reason=self._clean_text(item.get("reason")),
-                    why_recommended=self._clean_text(item.get("why_recommended")),
-                )
-            )
+        if not isinstance(payload, dict):
+            return []
 
-        return suggestions[:5]
+        title = self._clean_text(payload.get("movie_title"))
+        if not title:
+            return []
+
+        result = [
+            LLMRecommendationSuggestion(
+                movie_title=title,
+                provider=self._clean_text(payload.get("provider")),
+                watch_link=self._clean_text(payload.get("watch_link")),
+                reason=self._clean_text(payload.get("reason")),
+                why_recommended=self._clean_text(payload.get("why_recommended")),
+            )
+        ]
+        if trace is not None:
+            trace.event(
+                "openai_suggest_movies_parsed",
+                "ok" if result else "failed",
+                batch=batch_index,
+                suggestion_count=len(result),
+                titles=[suggestion.movie_title for suggestion in result],
+            )
+        return result
 
     async def recommend(
         self,
@@ -262,97 +273,133 @@ class RecommendationEngine:
             raise ValueError("At least one movie candidate is required.")
 
         if not self.settings.openai_api_key:
+            if get_trace() is not None:
+                get_trace().event(
+                    "openai_recommend",
+                    "skipped",
+                    reason="missing_openai_api_key",
+                    candidate_count=len(candidates),
+                )
             return self._fallback_recommendation(recommendation_request, candidates)
+
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "openai_recommend",
+                model=self.settings.openai_model,
+                candidate_count=len(candidates),
+                region=self._region(recommendation_request),
+            )
+            if trace
+            else nullcontext({})
+        )
 
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         try:
-            response = await client.responses.create(
-                model=self.settings.openai_model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You help people stop scrolling and pick one movie. "
-                            "Choose exactly one title from the candidate list. "
-                            "Interpret the user's intent semantically in any language. "
-                            "When the user asks for something similar, like, comparable, "
-                            "parecido, similar a, algo como, del estilo de, or equivalent "
-                            "wording around a named title, treat that title only as a "
-                            "reference and choose a different candidate with a close tonal, "
-                            "genre, era, or reputation match. Never choose the reference "
-                            "title itself in that case, including spelling, casing, "
-                            "punctuation, translation, or minor-misspelling variants of "
-                            "that title. If the user names a specific title as the movie "
-                            "they want and not merely as a similarity reference, strongly "
-                            "prefer that exact title when it is in the candidate list. If "
-                            "the named title is not available, choose a close match. "
-                            "Favor well-rated candidates with stronger vote counts and popularity. "
-                            "For classic, masterpiece, or cinema-canon requests, prioritize "
-                            "older, highly rated, widely voted films over new releases. "
-                            "Respect the user's allow_extra_costs preference when explaining the choice. "
-                            "Use web search to find the official watch page for the chosen "
-                            "movie on one of the selected providers available in the user's "
-                            "region. Prefer a direct title deep link, such as a Netflix, "
-                            "Disney+, Prime Video, YouTube, Max, HBO, or NOW title URL. If "
-                            "a direct title page is not available, use an official provider "
-                            "search page for the movie title. Do not return TMDb, JustWatch, "
-                            "Reelgood, IMDb, Rotten Tomatoes, or search engine result pages "
-                            "as watch_link. "
-                            "Return JSON only with movie_title, provider, watch_link, reason, "
-                            "and why_recommended. Use reason as a short summary. "
-                            "Use why_recommended to explain in one or two sentences why this "
-                            "movie fits the user's mood, group context, notes, selected providers, "
-                            "region, and extra-cost preference. "
-                            "Write reason and why_recommended in "
-                            f"{LANGUAGE_LABELS[recommendation_request.language]}. "
-                            "Do not invent titles or links."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "region": self._region(recommendation_request),
-                                "language": recommendation_request.language,
-                                "user_answers": recommendation_request.model_dump(mode="json"),
-                                "candidates": [
-                                    candidate.model_dump(
-                                        mode="json",
-                                        exclude={"watch_link"},
-                                    )
-                                    for candidate in candidates
-                                ],
-                            }
-                        ),
-                    },
-                ],
-                tools=[
-                    {
-                        "type": "web_search",
-                        "search_context_size": "medium",
-                        "user_location": {
-                            "type": "approximate",
-                            "country": self._region(recommendation_request),
+            with stage as details:
+                response = await client.responses.create(
+                    model=self.settings.openai_model,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You help people stop scrolling and pick one movie. "
+                                "Choose exactly one title from the candidate list. "
+                                "Interpret the user's intent semantically in any language. "
+                                "When the user asks for something similar, like, comparable, "
+                                "parecido, similar a, algo como, del estilo de, or equivalent "
+                                "wording around a named title, treat that title only as a "
+                                "reference and choose a different candidate with a close tonal, "
+                                "genre, era, or reputation match. Never choose the reference "
+                                "title itself in that case, including spelling, casing, "
+                                "punctuation, translation, or minor-misspelling variants of "
+                                "that title. If the user names a specific title as the movie "
+                                "they want and not merely as a similarity reference, strongly "
+                                "prefer that exact title when it is in the candidate list. If "
+                                "the named title is not available, choose a close match. "
+                                "Favor well-rated candidates with stronger vote counts and popularity. "
+                                "For classic, masterpiece, or cinema-canon requests, prioritize "
+                                "older, highly rated, widely voted films over new releases. "
+                                "Respect the user's allow_extra_costs preference when explaining the choice. "
+                                "Use web search to find the official watch page for the chosen "
+                                "movie on one of the selected providers available in the user's "
+                                "region. Prefer a direct title deep link, such as a Netflix, "
+                                "Disney+, Prime Video, YouTube, Max, HBO, or NOW title URL. If "
+                                "a direct title page is not available, use an official provider "
+                                "search page for the movie title. Do not return TMDb, JustWatch, "
+                                "Reelgood, IMDb, Rotten Tomatoes, or search engine result pages "
+                                "as watch_link. "
+                                "Return JSON only with movie_title, provider, watch_link, reason, "
+                                "and why_recommended. Use reason as a short summary. "
+                                "Use why_recommended to explain in one or two sentences why this "
+                                "movie fits the user's mood, group context, notes, selected providers, "
+                                "region, and extra-cost preference. "
+                                "Write reason and why_recommended in "
+                                f"{LANGUAGE_LABELS[recommendation_request.language]}. "
+                                "Do not invent titles or links."
+                            ),
                         },
-                    }
-                ],
-                tool_choice="required",
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "movie_recommendation",
-                        "schema": RECOMMENDATION_RESPONSE_SCHEMA,
-                        "strict": True,
-                    }
-                },
-            )
-        except OpenAIError:
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "region": self._region(recommendation_request),
+                                    "language": recommendation_request.language,
+                                    "user_answers": recommendation_request.model_dump(mode="json"),
+                                    "candidates": [
+                                        candidate.model_dump(
+                                            mode="json",
+                                            exclude={"watch_link"},
+                                        )
+                                        for candidate in candidates
+                                    ],
+                                }
+                            ),
+                        },
+                    ],
+                    tools=[
+                        {
+                            "type": "web_search",
+                            "search_context_size": "medium",
+                            "user_location": {
+                                "type": "approximate",
+                                "country": self._region(recommendation_request),
+                            },
+                        }
+                    ],
+                    tool_choice="required",
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "movie_recommendation",
+                            "schema": RECOMMENDATION_RESPONSE_SCHEMA,
+                            "strict": True,
+                        }
+                    },
+                )
+                details["openai_response_received"] = True
+        except OpenAIError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_recommend",
+                    "failed",
+                    reason="openai_error",
+                    error=str(exc),
+                )
             return self._fallback_recommendation(recommendation_request, candidates)
 
         content = self._response_text(response)
         try:
             llm_payload = json.loads(content)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_recommend",
+                    "failed",
+                    reason="invalid_json",
+                    error=str(exc),
+                    raw_content_preview=content[:200],
+                )
             return self._fallback_recommendation(recommendation_request, candidates)
 
         selected = self._candidate_by_title(
@@ -360,6 +407,13 @@ class RecommendationEngine:
             str(llm_payload.get("movie_title", "")),
         )
         if selected is None:
+            if trace is not None:
+                trace.event(
+                    "openai_recommend",
+                    "failed",
+                    reason="selected_title_not_in_candidates",
+                    returned_title=llm_payload.get("movie_title"),
+                )
             return self._fallback_recommendation(recommendation_request, candidates)
 
         fallback_reason = FALLBACK_REASONS[recommendation_request.language].format(
@@ -370,11 +424,21 @@ class RecommendationEngine:
             self._clean_text(llm_payload.get("why_recommended"))
             or reason
         )
+        watch_link = self._watch_link(llm_payload.get("watch_link"), selected)
+        if trace is not None:
+            trace.event(
+                "link_verification",
+                "ok" if self._is_supported_provider_url(watch_link) else "fallback",
+                movie_title=selected.title,
+                source="openai_recommend_response",
+                watch_link=watch_link,
+                llm_watch_link=self._clean_text(llm_payload.get("watch_link")),
+            )
 
         return RecommendationResponse(
             movie_title=selected.title,
             provider=str(llm_payload.get("provider") or ", ".join(selected.provider_names)),
-            watch_link=self._watch_link(llm_payload.get("watch_link"), selected),
+            watch_link=watch_link,
             reason=reason,
             why_recommended=why_recommended,
             tmdb_id=selected.tmdb_id,
@@ -494,19 +558,43 @@ class RecommendationEngine:
         suggestion: LLMRecommendationSuggestion,
         candidate: MovieCandidate,
     ) -> str:
-        link = self._clean_text(suggestion.watch_link)
-        if self._is_supported_provider_url(link):
-            return link
-
-        direct_link = await self._find_direct_watch_link(
-            recommendation_request,
-            candidate,
-            suggestion.provider,
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "link_verification",
+                movie_title=candidate.title,
+                suggested_provider=suggestion.provider,
+                suggestion_watch_link=suggestion.watch_link,
+            )
+            if trace
+            else nullcontext({})
         )
-        if direct_link:
-            return direct_link
 
-        return self._provider_search_link(candidate)
+        with stage as details:
+            link = self._clean_text(suggestion.watch_link)
+            if self._is_supported_provider_url(link):
+                details["source"] = "suggestion_link"
+                details["watch_link"] = link
+                details["result"] = "ok"
+                return link
+
+            details["suggestion_link_valid"] = False
+            direct_link = await self._find_direct_watch_link(
+                recommendation_request,
+                candidate,
+                suggestion.provider,
+            )
+            if direct_link:
+                details["source"] = "openai_watch_link_lookup"
+                details["watch_link"] = direct_link
+                details["result"] = "ok"
+                return direct_link
+
+            fallback_link = self._provider_search_link(candidate)
+            details["source"] = "provider_search_fallback"
+            details["watch_link"] = fallback_link
+            details["result"] = "fallback"
+            return fallback_link
 
     async def _find_direct_watch_link(
         self,
@@ -517,65 +605,111 @@ class RecommendationEngine:
         if not self.settings.openai_api_key:
             return ""
 
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "openai_watch_link_lookup",
+                movie_title=candidate.title,
+                model=self.settings.openai_model,
+                suggested_provider=provider,
+            )
+            if trace
+            else nullcontext({})
+        )
+
         client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         try:
-            response = await client.responses.create(
-                model=self.settings.openai_model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Use web search to find the official streaming-provider "
-                            "title page for this movie in the requested country. "
-                            "Return an empty string if you cannot verify a direct "
-                            "official provider URL. Do not return TMDb, JustWatch, "
-                            "Reelgood, IMDb, Rotten Tomatoes, or search engine pages."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "movie_title": candidate.title,
-                                "tmdb_id": candidate.tmdb_id,
-                                "region": self._region(recommendation_request),
-                                "verified_providers": candidate.provider_names,
-                                "suggested_provider": provider,
-                            }
-                        ),
-                    },
-                ],
-                tools=[
-                    {
-                        "type": "web_search",
-                        "search_context_size": "medium",
-                        "user_location": {
-                            "type": "approximate",
-                            "country": self._region(recommendation_request),
+            with stage as details:
+                response = await client.responses.create(
+                    model=self.settings.openai_model,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Use web search to find the official streaming-provider "
+                                "title page for this movie in the requested country. "
+                                "Return an empty string if you cannot verify a direct "
+                                "official provider URL. Do not return TMDb, JustWatch, "
+                                "Reelgood, IMDb, Rotten Tomatoes, or search engine pages."
+                            ),
                         },
-                    }
-                ],
-                tool_choice="required",
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "movie_watch_link",
-                        "schema": WATCH_LINK_RESPONSE_SCHEMA,
-                        "strict": True,
-                    }
-                },
-            )
-        except OpenAIError:
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "movie_title": candidate.title,
+                                    "tmdb_id": candidate.tmdb_id,
+                                    "region": self._region(recommendation_request),
+                                    "verified_providers": candidate.provider_names,
+                                    "suggested_provider": provider,
+                                }
+                            ),
+                        },
+                    ],
+                    tools=[
+                        {
+                            "type": "web_search",
+                            "search_context_size": "medium",
+                            "user_location": {
+                                "type": "approximate",
+                                "country": self._region(recommendation_request),
+                            },
+                        }
+                    ],
+                    tool_choice="required",
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "movie_watch_link",
+                            "schema": WATCH_LINK_RESPONSE_SCHEMA,
+                            "strict": True,
+                        }
+                    },
+                )
+                details["openai_response_received"] = True
+        except OpenAIError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_watch_link_lookup",
+                    "failed",
+                    movie_title=candidate.title,
+                    reason="openai_error",
+                    error=str(exc),
+                )
             return ""
 
         try:
             payload = json.loads(self._response_text(response))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_watch_link_lookup",
+                    "failed",
+                    movie_title=candidate.title,
+                    reason="invalid_json",
+                    error=str(exc),
+                )
             return ""
 
         link = self._clean_text(payload.get("watch_link"))
         if self._is_supported_provider_url(link):
+            if trace is not None:
+                trace.event(
+                    "openai_watch_link_lookup",
+                    "ok",
+                    movie_title=candidate.title,
+                    watch_link=link,
+                )
             return link
+
+        if trace is not None:
+            trace.event(
+                "openai_watch_link_lookup",
+                "failed",
+                movie_title=candidate.title,
+                reason="unsupported_or_empty_link",
+                returned_link=link,
+            )
         return ""
 
     def _verified_provider(

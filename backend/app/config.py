@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "MindYourMovies API"
     allowed_origins: list[str] = [
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "https://mindyourmovies.com",
         "https://www.mindyourmovies.com",
     ]

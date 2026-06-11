@@ -35,10 +35,10 @@ their public IP address, then falls back to `TMDB_REGION`.
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
-paid rentals or purchases. The backend first asks OpenAI with web search for five
-matching movies available in the user's country, then checks each title in TMDb
-for the requested country, provider, and monetization type. If none of those
-titles verify, it requests another five-title batch up to the configured batch
+paid rentals or purchases. The backend first asks OpenAI with web search for one
+matching movie available in the user's country, then checks that title in TMDb
+for the requested country, provider, and monetization type. If it does not
+verify, it requests another single-title attempt up to the configured batch
 limit. If this OpenAI-first path fails or exceeds the timeout, the endpoint
 falls back to the original flow: title/reference searches, similar movies,
 classic-aware discovery, and provider availability build a ranked TMDb candidate

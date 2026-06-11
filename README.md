@@ -168,11 +168,11 @@ stored in the frontend or backend.
 or purchases. Set it to `true` to include rent/buy options such as many YouTube
 movies.
 
-The backend first asks OpenAI with web search for five movies that match the
+The backend first asks OpenAI with web search for one movie that matches the
 prompt and should be available in the selected country/providers, then verifies
-each title against TMDb watch availability before returning it. If no suggested
-title verifies, the backend requests another five-title batch up to the configured
-batch limit. If the OpenAI-first path fails or exceeds the timeout, the backend
+that title against TMDb watch availability before returning it. If the suggested
+title does not verify, the backend requests another single-title attempt up to
+the configured batch limit. If the OpenAI-first path fails or exceeds the timeout, the backend
 falls back to the original TMDb-first workflow: it searches for explicit
 title/reference requests, expands from TMDb similar/recommended movies, uses
 classic-aware discovery when the prompt asks for cinema classics or masterpieces,
