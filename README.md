@@ -42,22 +42,14 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Set these values in `backend/.env`:
+Copy `backend/.env.example` to `backend/.env` and set the two API keys:
 
 - `TMDB_API_KEY`: TMDb API key used to fetch UK movie availability.
-- `TMDB_MIN_VOTE_AVERAGE`: minimum TMDb user rating for recommendation
-  candidates, defaulting to `7.0`.
-- `TMDB_MIN_VOTE_COUNT`: minimum TMDb vote count for recommendation candidates,
-  defaulting to `500`. TMDb does not provide raw movie view counts, so vote count
-  and popularity are used as audience-size signals.
-- `TMDB_CANDIDATE_LIMIT`: maximum number of ranked candidates sent to the LLM,
-  defaulting to `60`.
 - `OPENAI_API_KEY`: LLM API key used to choose the final movie.
-- `OPENAI_MODEL`: Model name, defaulting to `gpt-4.1-mini`.
-- `LLM_FIRST_TIMEOUT_SECONDS`: maximum time for the OpenAI-first path before
-  falling back to the TMDb-first workflow, defaulting to `60`.
-- `LLM_FIRST_MAX_BATCHES`: maximum five-title OpenAI batches to verify before
-  falling back, defaulting to `3`.
+
+All other backend settings (region, vote thresholds, OpenAI model, LLM-first
+timeout and batch limits, CORS origins, and so on) live in
+`backend/app/config.py` and are tracked in git.
 
 If keys are not configured, the backend returns a deterministic recommendation
 from demo candidates so the frontend can still be exercised.
@@ -67,18 +59,17 @@ from demo candidates so the frontend can still be exercised.
 ```bash
 cd frontend
 npm install
-cp .env.example .env
 npm run dev
 ```
 
-The frontend expects the API at `VITE_API_BASE_URL`, defaulting to
-`http://localhost:8000`.
+Frontend defaults live in `frontend/src/config.ts`. Local dev talks to
+`http://localhost:8000`; production builds use `https://api.mindyourmovies.com`
+automatically. Optional `VITE_*` overrides are documented in
+`frontend/.env.example`.
 
-The small "Buy me a coffee" support section defaults to Emilio's Stripe Payment
-Link. Set `VITE_DONATION_URL` only if the donation URL needs to be changed. The
-creator photo in that section defaults to `/emilio-banqueri.jpg`; place the
-photo in `frontend/public/emilio-banqueri.jpg` or set `VITE_CREATOR_PHOTO_URL`
-to another hosted image URL.
+The small "Buy me a coffee" support section uses Emilio's Stripe Payment Link
+and `/emilio-banqueri.jpg` by default. Place the photo in
+`frontend/public/emilio-banqueri.jpg`.
 
 ## Deploy
 
@@ -100,14 +91,11 @@ Pushes to `main` auto-deploy both via their GitHub integrations. GitHub Actions
 
 1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
 2. **Settings → Root Directory:** `backend`
-3. **Variables:**
+3. **Variables** (secrets only — everything else is in `backend/app/config.py`):
 
 ```env
-ALLOWED_ORIGINS=["https://mindyourmovies.com","https://www.mindyourmovies.com"]
 TMDB_API_KEY=<your key>
 OPENAI_API_KEY=<your key>
-TMDB_REGION=GB
-OPENAI_MODEL=gpt-4.1-mini
 ```
 
 4. **Settings → Networking → Custom Domain:** `api.mindyourmovies.com`
@@ -129,17 +117,11 @@ OPENAI_MODEL=gpt-4.1-mini
 | Build command        | `npm run build` |
 | Build output         | `dist`          |
 
-3. **Environment variables → Production:**
-
-```env
-VITE_API_BASE_URL=https://api.mindyourmovies.com
-VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
-VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
-```
+3. **Environment variables:** none required. Defaults are in
+   `frontend/src/config.ts` and production builds pick
+   `https://api.mindyourmovies.com` automatically.
 
 4. **Custom domains:** `mindyourmovies.com` and `www.mindyourmovies.com`
-
-Rebuild after changing `VITE_API_BASE_URL` — Vite bakes it in at build time.
 
 ### Stripe donations
 
@@ -152,19 +134,10 @@ stored in the frontend or backend.
    enable customer-adjustable quantity or create a few fixed donation prices.
 4. Copy the published payment link URL. The current donation link is
    `https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00`.
-5. For local development, set it in `frontend/.env`:
-
-```env
-VITE_DONATION_URL=https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00
-VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
-```
-
-6. Save the creator photo as `frontend/public/emilio-banqueri.jpg`, or set
-   `VITE_CREATOR_PHOTO_URL` to another public image URL.
-7. For production, add the same `VITE_DONATION_URL` and
-   `VITE_CREATOR_PHOTO_URL` values in Cloudflare Pages under
-   **Settings -> Environment variables -> Production**, then rebuild the
-   frontend. Vite bakes these values into the deployed site at build time.
+5. Save the creator photo as `frontend/public/emilio-banqueri.jpg`, or override
+   `VITE_CREATOR_PHOTO_URL` in `frontend/.env` if needed.
+6. Donation and photo URLs are configured in `frontend/src/config.ts`. Override
+   with `VITE_*` variables only when you need a non-default value.
 
 ### Troubleshooting
 
@@ -172,8 +145,8 @@ VITE_CREATOR_PHOTO_URL=/emilio-banqueri.jpg
 | ----------------------------- | ---------------------------------------------------------- |
 | Blank white frontend page     | Publish the built output (`frontend/dist`), not raw `frontend` |
 | `_redirects` infinite loop    | Use Wrangler's SPA fallback; do not deploy a catch-all `_redirects` rule |
-| CORS error in browser         | Add the frontend URL to `ALLOWED_ORIGINS` on Railway       |
-| Frontend calls `localhost`    | Set `VITE_API_BASE_URL` in Cloudflare and redeploy         |
+| CORS error in browser         | Add the frontend URL to `allowed_origins` in `config.py`   |
+| Frontend calls `localhost`    | Redeploy from `main` — production URL is in `src/config.ts` |
 | `api` subdomain SSL fails     | Disable Cloudflare proxy (grey cloud) on the `api` CNAME   |
 
 ## API
