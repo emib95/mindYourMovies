@@ -17,21 +17,15 @@ The server starts on `http://localhost:8000`.
 
 ## Environment
 
+Secrets go in `.env` (see `.env.example`):
+
 - `TMDB_API_KEY`: TMDb key for `/discover/movie`.
-- `TMDB_REGION`: fallback TMDb watch region, defaults to `GB`.
-- `TMDB_MIN_VOTE_AVERAGE`: minimum TMDb user rating for candidates, defaults to
-  `7.0`.
-- `TMDB_MIN_VOTE_COUNT`: minimum number of TMDb votes for candidates, defaults
-  to `500`. This is used as the audience-size signal because TMDb does not expose
-  raw per-movie view counts.
-- `TMDB_CANDIDATE_LIMIT`: maximum number of ranked candidates sent to the LLM,
-  defaulting to `60`.
-- `GEOLOCATION_API_URL`: optional IP geolocation endpoint template. Defaults to
-  `https://ipwho.is/{ip}?fields=success,country_code`.
 - `OPENAI_API_KEY`: optional for local development; without it, a deterministic
   demo recommendation is returned.
-- `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
-- `ALLOWED_ORIGINS`: JSON list of frontend origins.
+
+All other settings are defaults in `app/config.py` (region, vote thresholds,
+candidate limit, geolocation URL, OpenAI model, and CORS origins). Change those
+in git rather than in Railway or `.env`.
 
 ## Endpoint
 

@@ -2,6 +2,7 @@ import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import mindTheMovieLogo from './assets/mind-the-movie.svg'
+import { apiBaseUrl, creatorPhotoUrl, donationUrl } from './config'
 
 type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
 type Language = 'en' | 'es'
@@ -60,17 +61,6 @@ const regionOptions = [
   'NL',
   'BR',
 ]
-
-const apiBaseUrl = (
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
-).replace(/\/+$/, '')
-const donationUrl = (
-  import.meta.env.VITE_DONATION_URL ??
-  'https://buy.stripe.com/28E5kD9Am5ku4DIavWfYY00'
-).trim()
-const creatorPhotoUrl = (
-  import.meta.env.VITE_CREATOR_PHOTO_URL ?? '/emilio-banqueri.jpg'
-).trim()
 
 const translations = {
   en: {
