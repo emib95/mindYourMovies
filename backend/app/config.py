@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     tmdb_candidate_limit: int = 60
     geolocation_api_url: str = "https://ipwho.is/{ip}?fields=success,country_code"
     openai_api_key: str | None = None
-    openai_model: str = "gpt-5.5"
+    openai_model: str = "gpt-5.4-mini"
     llm_first_timeout_seconds: float = 60.0
     llm_first_max_batches: int = 3
 
