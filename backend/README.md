@@ -1,7 +1,8 @@
 # MindYourMovies backend
 
-FastAPI backend that gathers region-specific movie candidates from TMDb and asks
-an LLM to choose a single recommendation.
+FastAPI backend that asks an LLM for region-specific movie ideas, verifies them
+against TMDb watch availability, and falls back to the original TMDb-first
+candidate flow when needed.
 
 ## Setup
 
@@ -24,8 +25,8 @@ Secrets go in `.env` (see `.env.example`):
   demo recommendation is returned.
 
 All other settings are defaults in `app/config.py` (region, vote thresholds,
-candidate limit, geolocation URL, OpenAI model, and CORS origins). Change those
-in git rather than in Railway or `.env`.
+candidate limit, geolocation URL, OpenAI model, LLM-first timeout and batch
+limits, and CORS origins). Change those in git rather than in Railway or `.env`.
 
 ## Endpoint
 
@@ -34,8 +35,12 @@ their public IP address, then falls back to `TMDB_REGION`.
 
 `POST /api/recommendations` accepts provider access, desired mood, optional
 group context, optional notes, `language`, `region`, and `allow_extra_costs` for
-paid rentals or purchases. The backend uses title/reference searches, similar
-movies, classic-aware discovery, and provider availability to build a ranked
-candidate list before asking the LLM to choose one movie. The OpenAI request uses
-web search so the response can include an official streaming-provider title page
-or provider search URL instead of a TMDb watch page.
+paid rentals or purchases. The backend first asks OpenAI with web search for one
+matching movie available in the user's country, then checks that title in TMDb
+for the requested country, provider, and monetization type. If it does not
+verify, it requests another single-title attempt up to the configured batch
+limit. If this OpenAI-first path fails or exceeds the timeout, the endpoint
+falls back to the original flow: title/reference searches, similar movies,
+classic-aware discovery, and provider availability build a ranked TMDb candidate
+list before asking the LLM to choose one movie. OpenAI web search is also used to
+find an official streaming-provider title page when one is not already known.

@@ -2,6 +2,7 @@ import unittest
 
 from app.config import Settings
 from app.schemas import MovieCandidate, Provider, RecommendationRequest
+from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.tmdb import TMDbClient
 
@@ -258,6 +259,28 @@ class TMDbCandidateTests(unittest.TestCase):
         self.assertEqual(client._candidate_limit(), 100)
 
 
+class TMDbLLMFirstCandidateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_demo_title_verification_requires_selected_provider(self) -> None:
+        client = make_client(tmdb_api_key=None)
+
+        candidate = await client.available_candidate_for_title(
+            "Fight Club",
+            make_request("something bold"),
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.title, "Fight Club")
+
+        unavailable = await client.available_candidate_for_title(
+            "Fight Club",
+            make_request("something bold").model_copy(
+                update={"providers": [Provider.disney]}
+            ),
+        )
+
+        self.assertIsNone(unavailable)
+
+
 class FallbackRecommendationTests(unittest.TestCase):
     def test_fallback_prefers_classic_match_over_new_popularity(self) -> None:
         engine = RecommendationEngine(Settings(openai_api_key=None))
@@ -303,6 +326,36 @@ class FallbackRecommendationTests(unittest.TestCase):
         link = engine._watch_link("https://www.netflix.com/title/60011152", candidate)
 
         self.assertEqual(link, "https://www.netflix.com/title/60011152")
+
+
+class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_response_from_suggestion_uses_verified_provider_and_search_link(
+        self,
+    ) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key=None))
+        request = make_request("I want an Italian classic")
+        candidate = make_candidate(12445, "Cinema Paradiso", "1988", 8.4, 4500, 30.0)
+        suggestion = LLMRecommendationSuggestion(
+            movie_title="Cinema Paradiso",
+            provider="Some other service",
+            watch_link="https://www.themoviedb.org/movie/12445/watch?locale=GB",
+            reason="A warm Italian classic.",
+            why_recommended="It matches the Italian cinema request.",
+        )
+
+        response = await engine.recommendation_from_suggestion(
+            request,
+            suggestion,
+            candidate,
+        )
+
+        self.assertEqual(response.movie_title, "Cinema Paradiso")
+        self.assertEqual(response.provider, "Netflix")
+        self.assertEqual(
+            str(response.watch_link),
+            "https://www.netflix.com/search?q=Cinema+Paradiso",
+        )
+        self.assertEqual(response.reason, "A warm Italian classic.")
 
 
 if __name__ == "__main__":

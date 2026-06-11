@@ -3,12 +3,14 @@ import math
 import re
 import unicodedata
 from collections.abc import Iterable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 import httpx
 
 from app.config import Settings
+from app.recommendation_trace import get_trace
 from app.schemas import MovieCandidate, Provider, RecommendationRequest
 
 
@@ -196,57 +198,171 @@ class TMDbClient:
         self.settings = settings
         self.base_url = "https://api.themoviedb.org/3"
 
+    async def available_candidate_for_title(
+        self,
+        title: str,
+        recommendation_request: RecommendationRequest,
+        batch_index: int | None = None,
+        suggestion_index: int | None = None,
+    ) -> MovieCandidate | None:
+        trace = get_trace()
+        stage_details = {
+            "requested_title": title,
+            "region": self._region(recommendation_request),
+        }
+        if batch_index is not None:
+            stage_details["batch"] = batch_index
+        if suggestion_index is not None:
+            stage_details["suggestion_index"] = suggestion_index
+        stage = (
+            trace.stage("tmdb_title_verification", **stage_details)
+            if trace
+            else nullcontext({})
+        )
+
+        with stage as details:
+            region = self._region(recommendation_request)
+            if not self.settings.tmdb_api_key:
+                candidate = self._demo_candidate_for_title(
+                    title,
+                    recommendation_request,
+                    region,
+                )
+                if candidate is None:
+                    details["result"] = "failed"
+                    details["mode"] = "demo"
+                    return None
+                details["result"] = "ok"
+                details["mode"] = "demo"
+                details["verified_title"] = candidate.title
+                details["tmdb_id"] = candidate.tmdb_id
+                details["providers"] = candidate.provider_names
+                return candidate
+
+            provider_ids = self._provider_ids(recommendation_request.providers)
+            language = self._language(recommendation_request, region)
+            excluded_ids = set(recommendation_request.excluded_tmdb_ids)
+            excluded_titles = self._excluded_movie_titles(recommendation_request)
+
+            async with httpx.AsyncClient(timeout=12) as client:
+                search_payload = await self._get_json(
+                    client,
+                    "/search/movie",
+                    {
+                        "include_adult": "false",
+                        "language": language,
+                        "page": 1,
+                        "query": title,
+                    },
+                )
+                for movie in self._rank_reference_seeds(
+                    search_payload.get("results", []),
+                    title,
+                )[:5]:
+                    if not self._is_plausible_title_match(movie, title):
+                        continue
+                    movie_id = movie.get("id")
+                    if not movie_id:
+                        continue
+                    provider_names = await self._available_provider_names(
+                        client,
+                        int(movie_id),
+                        recommendation_request,
+                        region,
+                        provider_ids,
+                    )
+                    if not provider_names:
+                        continue
+
+                    candidate = self._candidate_from_movie(
+                        movie,
+                        provider_names,
+                        region,
+                    )
+                    if self._is_excluded_candidate(
+                        candidate,
+                        excluded_ids,
+                        excluded_titles,
+                    ):
+                        continue
+                    details["result"] = "ok"
+                    details["verified_title"] = candidate.title
+                    details["tmdb_id"] = candidate.tmdb_id
+                    details["providers"] = candidate.provider_names
+                    return candidate
+
+            details["result"] = "failed"
+            details["reason"] = "no_matching_available_title"
+            return None
+
     async def discover_movies(
         self, recommendation_request: RecommendationRequest
     ) -> list[MovieCandidate]:
-        region = self._region(recommendation_request)
-        if not self.settings.tmdb_api_key:
-            return self._demo_candidates(recommendation_request, region)
-
-        provider_ids = self._provider_ids(recommendation_request.providers)
-        language = self._language(recommendation_request, region)
-        candidate_limit = self._candidate_limit()
-        candidates: list[MovieCandidate] = []
-        similarity_reference_queries = {
-            self._normalized_text(query)
-            for query in self._similarity_reference_queries(recommendation_request)
-        }
-        excluded_reference_ids: set[int] = set()
-
-        async with httpx.AsyncClient(timeout=12) as client:
-            for query in self._reference_queries(recommendation_request)[
-                :MAX_REFERENCE_QUERIES
-            ]:
-                reference_result = await self._reference_candidates(
-                    client,
-                    query,
-                    recommendation_request,
-                    region,
-                    provider_ids,
-                    language,
-                    self._normalized_text(query) in similarity_reference_queries,
-                )
-                candidates.extend(reference_result.candidates)
-                if reference_result.excluded_seed_id is not None:
-                    excluded_reference_ids.add(reference_result.excluded_seed_id)
-
-            candidates.extend(
-                await self._discover_candidates(
-                    client,
-                    recommendation_request,
-                    region,
-                    provider_ids,
-                    language,
-                    candidate_limit,
-                )
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "tmdb_discover_movies",
+                region=self._region(recommendation_request),
             )
-
-        return self._rank_and_limit_candidates(
-            candidates,
-            recommendation_request,
-            candidate_limit,
-            excluded_reference_ids,
+            if trace
+            else nullcontext({})
         )
+
+        with stage as details:
+            region = self._region(recommendation_request)
+            if not self.settings.tmdb_api_key:
+                candidates = self._demo_candidates(recommendation_request, region)
+                details["mode"] = "demo"
+                details["candidate_count"] = len(candidates)
+                return candidates
+
+            provider_ids = self._provider_ids(recommendation_request.providers)
+            language = self._language(recommendation_request, region)
+            candidate_limit = self._candidate_limit()
+            candidates: list[MovieCandidate] = []
+            similarity_reference_queries = {
+                self._normalized_text(query)
+                for query in self._similarity_reference_queries(recommendation_request)
+            }
+            excluded_reference_ids: set[int] = set()
+
+            async with httpx.AsyncClient(timeout=12) as client:
+                for query in self._reference_queries(recommendation_request)[
+                    :MAX_REFERENCE_QUERIES
+                ]:
+                    reference_result = await self._reference_candidates(
+                        client,
+                        query,
+                        recommendation_request,
+                        region,
+                        provider_ids,
+                        language,
+                        self._normalized_text(query) in similarity_reference_queries,
+                    )
+                    candidates.extend(reference_result.candidates)
+                    if reference_result.excluded_seed_id is not None:
+                        excluded_reference_ids.add(reference_result.excluded_seed_id)
+
+                candidates.extend(
+                    await self._discover_candidates(
+                        client,
+                        recommendation_request,
+                        region,
+                        provider_ids,
+                        language,
+                        candidate_limit,
+                    )
+                )
+
+            ranked_candidates = self._rank_and_limit_candidates(
+                candidates,
+                recommendation_request,
+                candidate_limit,
+                excluded_reference_ids,
+            )
+            details["mode"] = "tmdb"
+            details["candidate_count"] = len(ranked_candidates)
+            return ranked_candidates
 
     async def _reference_candidates(
         self,
@@ -562,6 +678,19 @@ class TMDbClient:
         ]
         return matching or eligible_candidates
 
+    def _demo_candidate_for_title(
+        self,
+        title: str,
+        recommendation_request: RecommendationRequest,
+        region: str,
+    ) -> MovieCandidate | None:
+        for candidate in self._demo_candidates(recommendation_request, region):
+            if self._title_similarity(candidate.title, title) >= (
+                FUZZY_REFERENCE_TITLE_THRESHOLD
+            ):
+                return candidate
+        return None
+
     def _provider_ids(self, providers: list[Provider]) -> list[int]:
         ids: list[int] = []
         for provider in providers:
@@ -622,16 +751,16 @@ class TMDbClient:
         )
 
     def _best_reference_seed(self, movies: Sequence[dict], query: str) -> dict | None:
-        if not movies:
-            return None
+        ranked = self._rank_reference_seeds(movies, query)
+        return ranked[0] if ranked else None
 
-        normalized_query = self._normalized_text(query)
-
+    def _rank_reference_seeds(
+        self,
+        movies: Sequence[dict],
+        query: str,
+    ) -> list[dict]:
         def score(movie: dict) -> tuple[int, float, float, int, float]:
-            title = self._normalized_text(
-                movie.get("title") or movie.get("original_title") or ""
-            )
-            title_similarity = self._title_similarity(title, normalized_query)
+            title_similarity = self._movie_title_similarity(movie, query)
             return (
                 int(title_similarity >= FUZZY_REFERENCE_TITLE_THRESHOLD),
                 title_similarity,
@@ -640,7 +769,22 @@ class TMDbClient:
                 float(movie.get("popularity") or 0),
             )
 
-        return max(movies, key=score)
+        return sorted(movies, key=score, reverse=True)
+
+    def _is_plausible_title_match(self, movie: dict, query: str) -> bool:
+        return self._movie_title_similarity(movie, query) >= (
+            FUZZY_REFERENCE_TITLE_THRESHOLD
+        )
+
+    def _movie_title_similarity(self, movie: dict, query: str) -> float:
+        titles = [
+            movie.get("title") or "",
+            movie.get("original_title") or "",
+        ]
+        return max(
+            (self._title_similarity(title, query) for title in titles if title),
+            default=0.0,
+        )
 
     def _is_excluded_candidate(
         self,
