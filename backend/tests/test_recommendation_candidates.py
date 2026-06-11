@@ -1,8 +1,14 @@
 import unittest
 
 from app.config import Settings
-from app.schemas import MovieCandidate, Provider, RecommendationRequest
+from app.schemas import (
+    MovieCandidate,
+    Provider,
+    RecommendationRequest,
+    RecommendationSearchPlan,
+)
 from app.services.llm import RecommendationEngine
+from app.services.planner import RecommendationPlanner
 from app.services.tmdb import TMDbClient
 
 
@@ -256,6 +262,83 @@ class TMDbCandidateTests(unittest.TestCase):
         client = make_client(tmdb_candidate_limit=1000)
 
         self.assertEqual(client._candidate_limit(), 100)
+
+    def test_planned_discover_pools_add_genres_keywords_and_relaxed_thresholds(
+        self,
+    ) -> None:
+        client = make_client()
+        plan = RecommendationSearchPlan(
+            genres=["science fiction", "drama"],
+            keywords=["memory", "grief"],
+            release_year_min=1990,
+            runtime_max_minutes=130,
+            strictness="low",
+            relax_quality=True,
+        )
+
+        params = client._discover_param_sets(
+            make_request("quiet melancholy sci-fi about grief"),
+            "GB",
+            [8],
+            "en-GB",
+            plan,
+            keyword_ids=[818, 9715],
+        )
+
+        self.assertTrue(any(param.get("with_genres") == "878|18" for param in params))
+        self.assertTrue(
+            any(param.get("with_keywords") == "818|9715" for param in params)
+        )
+        self.assertTrue(
+            all(param["vote_average.gte"] == 6.3 for param in params)
+        )
+        self.assertTrue(all(param["vote_count.gte"] == 50 for param in params))
+        self.assertTrue(
+            all(param["primary_release_date.gte"] == "1990-01-01" for param in params)
+        )
+        self.assertTrue(all(param["with_runtime.lte"] == 130 for param in params))
+
+    def test_plan_similarity_titles_are_excluded_from_ranking(self) -> None:
+        client = make_client()
+        request = make_request("thoughtful thriller")
+        plan = RecommendationSearchPlan(similar_to_titles=["Shutter Island"])
+        candidates = [
+            make_candidate(11324, "Shutter Island", "2010", 8.2, 24000, 80.0),
+            make_candidate(146233, "Prisoners", "2013", 8.1, 12000, 65.0),
+        ]
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60, (), plan)
+
+        self.assertEqual([candidate.title for candidate in ranked], ["Prisoners"])
+
+    def test_plan_terms_improve_candidate_ranking(self) -> None:
+        client = make_client()
+        request = make_request("something emotional")
+        plan = RecommendationSearchPlan(keywords=["memory"], themes=["grief"])
+        candidates = [
+            make_candidate(1, "Popular Generic", "2020", 8.0, 20000, 200.0),
+            make_candidate(2, "Quiet Memory", "2019", 8.0, 20000, 20.0),
+        ]
+        candidates[1] = candidates[1].model_copy(
+            update={"overview": "A quiet story about memory and grief."}
+        )
+
+        ranked = client._rank_and_limit_candidates(candidates, request, 60, (), plan)
+
+        self.assertEqual(ranked[0].title, "Quiet Memory")
+
+
+class RecommendationPlannerTests(unittest.TestCase):
+    def test_fallback_plan_detects_niche_genre_and_relaxes_quality(self) -> None:
+        planner = RecommendationPlanner(Settings(openai_api_key=None))
+        plan = planner._fallback_plan(
+            make_request("quiet melancholy sci-fi about memory and grief")
+        )
+
+        self.assertIn("science fiction", plan.genres)
+        self.assertIn("memory", plan.keywords)
+        self.assertTrue(plan.relax_quality)
+        self.assertEqual(plan.strictness, "low")
 
 
 class FallbackRecommendationTests(unittest.TestCase):

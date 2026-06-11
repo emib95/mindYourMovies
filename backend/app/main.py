@@ -6,7 +6,9 @@ from app.config import get_settings
 from app.schemas import LocationResponse, RecommendationRequest, RecommendationResponse
 from app.services.llm import RecommendationEngine
 from app.services.location import LocationResolver
+from app.services.planner import RecommendationPlanner
 from app.services.tmdb import TMDbClient
+from app.timing import StepTimer
 
 
 settings = get_settings()
@@ -21,6 +23,7 @@ app.add_middleware(
 )
 
 tmdb_client = TMDbClient(settings)
+recommendation_planner = RecommendationPlanner(settings)
 recommendation_engine = RecommendationEngine(settings)
 location_resolver = LocationResolver(settings)
 
@@ -53,36 +56,60 @@ async def create_recommendation(
     request: Request,
     recommendation_request: RecommendationRequest,
 ) -> RecommendationResponse:
-    if recommendation_request.region is None:
-        location = await location_resolver.resolve(
-            request.headers,
-            request.client.host if request.client else None,
-        )
-        recommendation_request = recommendation_request.model_copy(
-            update={"region": location.region}
-        )
-
+    timer = StepTimer(__name__, "recommendation_pipeline")
     try:
-        candidates = await tmdb_client.discover_movies(recommendation_request)
-    except HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Could not fetch movie availability from TMDb.",
-        ) from exc
+        if recommendation_request.region is None:
+            location = await location_resolver.resolve(
+                request.headers,
+                request.client.host if request.client else None,
+            )
+            recommendation_request = recommendation_request.model_copy(
+                update={"region": location.region}
+            )
+        timer.mark("location_resolution", region=recommendation_request.region)
 
-    if not candidates:
-        detail = _no_movies_detail(recommendation_request)
-        if not recommendation_request.allow_extra_costs:
-            detail = _no_included_movies_detail(recommendation_request)
-        raise HTTPException(
-            status_code=404,
-            detail=detail,
+        search_plan = await recommendation_planner.create_plan(recommendation_request)
+        timer.mark(
+            "query_planning",
+            relax_quality=search_plan.relax_quality,
+            strictness=search_plan.strictness,
+            genres=len(search_plan.genres),
+            keywords=len(search_plan.keywords),
+            themes=len(search_plan.themes),
         )
 
-    try:
-        return await recommendation_engine.recommend(recommendation_request, candidates)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            candidates = await tmdb_client.discover_movies(
+                recommendation_request,
+                search_plan,
+            )
+        except HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Could not fetch movie availability from TMDb.",
+            ) from exc
+        timer.mark("candidate_retrieval", candidate_count=len(candidates))
+
+        if not candidates:
+            detail = _no_movies_detail(recommendation_request)
+            if not recommendation_request.allow_extra_costs:
+                detail = _no_included_movies_detail(recommendation_request)
+            raise HTTPException(
+                status_code=404,
+                detail=detail,
+            )
+
+        try:
+            response = await recommendation_engine.recommend(
+                recommendation_request,
+                candidates,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        timer.mark("final_selection", movie=response.movie_title)
+        return response
+    finally:
+        timer.finish(region=recommendation_request.region)
 
 
 def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:

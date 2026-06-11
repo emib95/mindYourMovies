@@ -100,6 +100,64 @@ class RecommendationRequest(BaseModel):
         return normalized
 
 
+class RecommendationSearchPlan(BaseModel):
+    exact_title_queries: list[str] = Field(default_factory=list, max_length=5)
+    similar_to_titles: list[str] = Field(default_factory=list, max_length=5)
+    search_queries: list[str] = Field(default_factory=list, max_length=6)
+    genres: list[str] = Field(default_factory=list, max_length=6)
+    excluded_genres: list[str] = Field(default_factory=list, max_length=6)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    excluded_keywords: list[str] = Field(default_factory=list, max_length=10)
+    tones: list[str] = Field(default_factory=list, max_length=8)
+    themes: list[str] = Field(default_factory=list, max_length=8)
+    release_year_min: int | None = Field(default=None, ge=1878, le=2100)
+    release_year_max: int | None = Field(default=None, ge=1878, le=2100)
+    runtime_max_minutes: int | None = Field(default=None, ge=30, le=360)
+    original_language: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        pattern=r"^[a-z]{2}$",
+    )
+    strictness: Literal["low", "medium", "high"] = "medium"
+    relax_quality: bool = False
+    rationale: str = Field(default="", max_length=500)
+
+    @field_validator(
+        "exact_title_queries",
+        "similar_to_titles",
+        "search_queries",
+        "genres",
+        "excluded_genres",
+        "keywords",
+        "excluded_keywords",
+        "tones",
+        "themes",
+        mode="before",
+    )
+    @classmethod
+    def normalize_string_list(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+
+        normalized: list[str] = []
+        for item in value:
+            text = str(item).strip()
+            if text and text not in normalized:
+                normalized.append(text)
+        return normalized
+
+    @field_validator("original_language", mode="before")
+    @classmethod
+    def normalize_original_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        return normalized or None
+
+
 class MovieCandidate(BaseModel):
     tmdb_id: int
     title: str

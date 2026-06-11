@@ -9,7 +9,13 @@ from difflib import SequenceMatcher
 import httpx
 
 from app.config import Settings
-from app.schemas import MovieCandidate, Provider, RecommendationRequest
+from app.schemas import (
+    MovieCandidate,
+    Provider,
+    RecommendationRequest,
+    RecommendationSearchPlan,
+)
+from app.timing import StepTimer
 
 
 @dataclass(frozen=True)
@@ -44,8 +50,33 @@ MIN_CLASSIC_VOTE_COUNT = 1000
 MAX_REFERENCE_QUERIES = 3
 MAX_REFERENCE_RELATED_MOVIES = 40
 MAX_AVAILABILITY_REQUESTS = 8
+MAX_PLANNED_DISCOVER_POOLS = 6
+MAX_KEYWORD_TERMS = 8
 FUZZY_REFERENCE_TITLE_THRESHOLD = 0.82
 MIN_FUZZY_REFERENCE_LENGTH = 6
+TMDB_GENRE_IDS = {
+    "action": 28,
+    "adventure": 12,
+    "animation": 16,
+    "comedy": 35,
+    "crime": 80,
+    "documentary": 99,
+    "drama": 18,
+    "family": 10751,
+    "fantasy": 14,
+    "history": 36,
+    "horror": 27,
+    "music": 10402,
+    "mystery": 9648,
+    "romance": 10749,
+    "science fiction": 878,
+    "sci-fi": 878,
+    "scifi": 878,
+    "tv movie": 10770,
+    "thriller": 53,
+    "war": 10752,
+    "western": 37,
+}
 
 CLASSIC_INTENT_TERMS = (
     "classic",
@@ -197,24 +228,34 @@ class TMDbClient:
         self.base_url = "https://api.themoviedb.org/3"
 
     async def discover_movies(
-        self, recommendation_request: RecommendationRequest
+        self,
+        recommendation_request: RecommendationRequest,
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[MovieCandidate]:
+        timer = StepTimer(__name__, "tmdb_discovery")
         region = self._region(recommendation_request)
         if not self.settings.tmdb_api_key:
-            return self._demo_candidates(recommendation_request, region)
+            candidates = self._demo_candidates(recommendation_request, region)
+            timer.mark("demo_candidates", candidate_count=len(candidates))
+            timer.finish(region=region)
+            return candidates
 
+        plan = search_plan or RecommendationSearchPlan()
         provider_ids = self._provider_ids(recommendation_request.providers)
         language = self._language(recommendation_request, region)
         candidate_limit = self._candidate_limit()
         candidates: list[MovieCandidate] = []
         similarity_reference_queries = {
             self._normalized_text(query)
-            for query in self._similarity_reference_queries(recommendation_request)
+            for query in self._similarity_reference_queries(
+                recommendation_request,
+                plan,
+            )
         }
         excluded_reference_ids: set[int] = set()
 
         async with httpx.AsyncClient(timeout=12) as client:
-            for query in self._reference_queries(recommendation_request)[
+            for query in self._reference_queries(recommendation_request, plan)[
                 :MAX_REFERENCE_QUERIES
             ]:
                 reference_result = await self._reference_candidates(
@@ -225,10 +266,16 @@ class TMDbClient:
                     provider_ids,
                     language,
                     self._normalized_text(query) in similarity_reference_queries,
+                    plan,
                 )
                 candidates.extend(reference_result.candidates)
                 if reference_result.excluded_seed_id is not None:
                     excluded_reference_ids.add(reference_result.excluded_seed_id)
+            timer.mark(
+                "reference_candidates",
+                candidate_count=len(candidates),
+                excluded_references=len(excluded_reference_ids),
+            )
 
             candidates.extend(
                 await self._discover_candidates(
@@ -238,15 +285,21 @@ class TMDbClient:
                     provider_ids,
                     language,
                     candidate_limit,
+                    plan,
                 )
             )
+            timer.mark("discover_candidates", candidate_count=len(candidates))
 
-        return self._rank_and_limit_candidates(
+        ranked_candidates = self._rank_and_limit_candidates(
             candidates,
             recommendation_request,
             candidate_limit,
             excluded_reference_ids,
+            plan,
         )
+        timer.mark("ranking", candidate_count=len(ranked_candidates))
+        timer.finish(region=region)
+        return ranked_candidates
 
     async def _reference_candidates(
         self,
@@ -257,6 +310,7 @@ class TMDbClient:
         provider_ids: Sequence[int],
         language: str,
         exclude_seed: bool,
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> ReferenceCandidateResult:
         search_payload = await self._get_json(
             client,
@@ -295,6 +349,7 @@ class TMDbClient:
                 recommendation_request,
                 region,
                 provider_ids,
+                search_plan,
             ),
             int(seed_id) if exclude_seed else None,
         )
@@ -307,16 +362,28 @@ class TMDbClient:
         provider_ids: Sequence[int],
         language: str,
         candidate_limit: int,
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[MovieCandidate]:
         provider_names = self._provider_names(recommendation_request.providers)
         candidates: list[MovieCandidate] = []
         page_count = max(1, math.ceil(candidate_limit / 20))
+        keyword_ids = await self._keyword_ids(
+            client,
+            self._plan_keyword_terms(search_plan),
+        )
+        excluded_keyword_ids = await self._keyword_ids(
+            client,
+            (search_plan.excluded_keywords if search_plan else []),
+        )
 
         for params in self._discover_param_sets(
             recommendation_request,
             region,
             provider_ids,
             language,
+            search_plan,
+            keyword_ids,
+            excluded_keyword_ids,
         ):
             for page in range(1, page_count + 1):
                 payload = await self._get_json(
@@ -330,7 +397,8 @@ class TMDbClient:
                 candidates.extend(
                     self._candidate_from_movie(movie, provider_names, region)
                     for movie in payload.get("results", [])
-                    if movie.get("id") and self._passes_quality_threshold(movie)
+                    if movie.get("id")
+                    and self._passes_quality_threshold(movie, search_plan)
                 )
 
         return candidates
@@ -342,12 +410,16 @@ class TMDbClient:
         recommendation_request: RecommendationRequest,
         region: str,
         provider_ids: Sequence[int],
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[MovieCandidate]:
         deduped_movies = list(self._dedupe_movies(movies))
         semaphore = asyncio.Semaphore(MAX_AVAILABILITY_REQUESTS)
 
         async def candidate_for_movie(movie: dict) -> MovieCandidate | None:
-            if not movie.get("id") or not self._passes_quality_threshold(movie):
+            if not movie.get("id") or not self._passes_quality_threshold(
+                movie,
+                search_plan,
+            ):
                 return None
             async with semaphore:
                 provider_names = await self._available_provider_names(
@@ -415,13 +487,17 @@ class TMDbClient:
         region: str,
         provider_ids: Sequence[int],
         language: str,
+        search_plan: RecommendationSearchPlan | None = None,
+        keyword_ids: Sequence[int] = (),
+        excluded_keyword_ids: Sequence[int] = (),
     ) -> list[dict[str, object]]:
+        min_vote_average, min_vote_count = self._quality_thresholds(search_plan)
         base_params = {
             "include_adult": "false",
             "include_video": "false",
             "language": language,
-            "vote_average.gte": self.settings.tmdb_min_vote_average,
-            "vote_count.gte": self.settings.tmdb_min_vote_count,
+            "vote_average.gte": min_vote_average,
+            "vote_count.gte": min_vote_count,
             "watch_region": region,
             "with_watch_monetization_types": self._monetization_types(
                 recommendation_request
@@ -430,30 +506,129 @@ class TMDbClient:
                 str(provider_id) for provider_id in provider_ids
             ),
         }
+        if search_plan:
+            if search_plan.release_year_min is not None:
+                base_params["primary_release_date.gte"] = (
+                    f"{search_plan.release_year_min}-01-01"
+                )
+            if search_plan.release_year_max is not None:
+                base_params["primary_release_date.lte"] = (
+                    f"{search_plan.release_year_max}-12-31"
+                )
+            if search_plan.runtime_max_minutes is not None:
+                base_params["with_runtime.lte"] = search_plan.runtime_max_minutes
+            if search_plan.original_language:
+                base_params["with_original_language"] = search_plan.original_language
 
-        if not self._has_classic_intent(recommendation_request):
-            return [
+        excluded_genre_ids = self._genre_ids(
+            search_plan.excluded_genres if search_plan else []
+        )
+        if excluded_genre_ids:
+            base_params["without_genres"] = ",".join(
+                str(genre_id) for genre_id in excluded_genre_ids
+            )
+        if excluded_keyword_ids:
+            base_params["without_keywords"] = ",".join(
+                str(keyword_id) for keyword_id in excluded_keyword_ids
+            )
+
+        params: list[dict[str, object]] = []
+        if self._has_classic_intent(recommendation_request):
+            params.append(
+                {
+                    **base_params,
+                    "primary_release_date.lte": CLASSIC_RELEASE_DATE_CUTOFF,
+                    "sort_by": "vote_average.desc",
+                    "vote_count.gte": max(
+                        int(min_vote_count),
+                        MIN_CLASSIC_VOTE_COUNT,
+                    ),
+                }
+            )
+
+        genre_ids = self._genre_ids(search_plan.genres if search_plan else [])
+        if genre_ids:
+            params.append(
                 {
                     **base_params,
                     "sort_by": "popularity.desc",
+                    "with_genres": "|".join(str(genre_id) for genre_id in genre_ids),
                 }
-            ]
+            )
 
-        return [
-            {
-                **base_params,
-                "primary_release_date.lte": CLASSIC_RELEASE_DATE_CUTOFF,
-                "sort_by": "vote_average.desc",
-                "vote_count.gte": max(
-                    int(self.settings.tmdb_min_vote_count),
-                    MIN_CLASSIC_VOTE_COUNT,
-                ),
-            },
+        if keyword_ids:
+            params.append(
+                {
+                    **base_params,
+                    "sort_by": "popularity.desc",
+                    "with_keywords": "|".join(
+                        str(keyword_id) for keyword_id in keyword_ids
+                    ),
+                }
+            )
+
+        if genre_ids and keyword_ids:
+            params.append(
+                {
+                    **base_params,
+                    "sort_by": "vote_average.desc",
+                    "with_genres": "|".join(str(genre_id) for genre_id in genre_ids[:3]),
+                    "with_keywords": "|".join(
+                        str(keyword_id) for keyword_id in keyword_ids[:4]
+                    ),
+                }
+            )
+
+        params.append(
             {
                 **base_params,
                 "sort_by": "popularity.desc",
-            },
-        ]
+            }
+        )
+
+        return self._dedupe_param_sets(params)[:MAX_PLANNED_DISCOVER_POOLS]
+
+    async def _keyword_ids(
+        self,
+        client: httpx.AsyncClient,
+        terms: Sequence[str],
+    ) -> list[int]:
+        keyword_ids: list[int] = []
+        for term in list(dict.fromkeys(term.strip() for term in terms if term.strip()))[
+            :MAX_KEYWORD_TERMS
+        ]:
+            payload = await self._get_json(
+                client,
+                "/search/keyword",
+                {
+                    "page": 1,
+                    "query": term,
+                },
+            )
+            keyword = self._best_keyword_match(payload.get("results", []), term)
+            if keyword is not None and keyword["id"] not in keyword_ids:
+                keyword_ids.append(int(keyword["id"]))
+        return keyword_ids
+
+    def _best_keyword_match(
+        self,
+        keywords: Sequence[dict],
+        term: str,
+    ) -> dict | None:
+        if not keywords:
+            return None
+
+        normalized_term = self._normalized_text(term)
+
+        def score(keyword: dict) -> tuple[int, float, int]:
+            name = self._normalized_text(keyword.get("name") or "")
+            return (
+                int(name == normalized_term),
+                self._title_similarity(name, normalized_term),
+                int(keyword.get("id") or 0),
+            )
+
+        return max(keywords, key=score)
 
     def _candidate_from_movie(
         self,
@@ -479,13 +654,17 @@ class TMDbClient:
         recommendation_request: RecommendationRequest,
         limit: int,
         excluded_tmdb_ids: Iterable[int] = (),
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[MovieCandidate]:
         excluded_ids = set(excluded_tmdb_ids).union(
             recommendation_request.excluded_tmdb_ids
         )
         excluded_titles = {
             self._normalized_text(query)
-            for query in self._similarity_reference_queries(recommendation_request)
+            for query in self._similarity_reference_queries(
+                recommendation_request,
+                search_plan,
+            )
         }.union(self._excluded_movie_titles(recommendation_request))
         deduped_candidates = [
             candidate
@@ -501,6 +680,7 @@ class TMDbClient:
             key=lambda candidate: self._candidate_score(
                 candidate,
                 recommendation_request,
+                search_plan,
             ),
             reverse=True,
         )[:limit]
@@ -509,20 +689,38 @@ class TMDbClient:
         self,
         candidate: MovieCandidate,
         recommendation_request: RecommendationRequest,
-    ) -> tuple[int, int, int, float, int, float]:
+        search_plan: RecommendationSearchPlan | None = None,
+    ) -> tuple[int, int, int, int, float, int, float]:
         query = self._normalized_text(self._request_text(recommendation_request))
         title = self._normalized_text(candidate.title)
         reference_queries = [
             self._normalized_text(reference_query)
-            for reference_query in self._reference_queries(recommendation_request)
+            for reference_query in self._reference_queries(
+                recommendation_request,
+                search_plan,
+            )
         ]
         exact_reference_match = int(title in reference_queries)
+        plan_terms = {
+            self._normalized_text(term)
+            for term in self._plan_keyword_terms(search_plan)
+        }
+        searchable = self._normalized_text(f"{candidate.title} {candidate.overview}")
         keyword_score = sum(
             1
             for word in query.split()
             if len(word) > 2
             and word not in GENERIC_REFERENCE_WORDS
-            and word in self._normalized_text(f"{candidate.title} {candidate.overview}")
+            and word in searchable
+        )
+        plan_term_score = sum(
+            1
+            for term in plan_terms
+            if term
+            and (
+                term in searchable
+                or any(word in searchable for word in term.split() if len(word) > 3)
+            )
         )
         classic_match = int(
             self._has_classic_intent(recommendation_request)
@@ -535,6 +733,7 @@ class TMDbClient:
         return (
             exact_reference_match,
             keyword_score,
+            plan_term_score,
             classic_match,
             rating,
             vote_count,
@@ -596,14 +795,19 @@ class TMDbClient:
             return "en-GB"
         return LANGUAGE_LOCALES[recommendation_request.language]
 
-    def _passes_quality_threshold(self, movie: dict) -> bool:
+    def _passes_quality_threshold(
+        self,
+        movie: dict,
+        search_plan: RecommendationSearchPlan | None = None,
+    ) -> bool:
         rating = movie.get("vote_average")
         vote_count = movie.get("vote_count")
         if rating is None or vote_count is None:
             return False
+        min_vote_average, min_vote_count = self._quality_thresholds(search_plan)
         return (
-            float(rating) >= self.settings.tmdb_min_vote_average
-            and int(vote_count) >= self.settings.tmdb_min_vote_count
+            float(rating) >= min_vote_average
+            and int(vote_count) >= min_vote_count
         )
 
     def _candidate_passes_quality_threshold(self, candidate: MovieCandidate) -> bool:
@@ -690,9 +894,13 @@ class TMDbClient:
     def _reference_queries(
         self,
         recommendation_request: RecommendationRequest,
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[str]:
         text = self._request_text(recommendation_request)
         candidates: list[str] = []
+        if search_plan:
+            candidates.extend(search_plan.exact_title_queries)
+            candidates.extend(search_plan.similar_to_titles)
 
         for quoted in re.findall(r'"([^"]{2,80})"|\'([^\']{2,80})\'', text):
             candidates.extend(part for part in quoted if part)
@@ -712,9 +920,12 @@ class TMDbClient:
     def _similarity_reference_queries(
         self,
         recommendation_request: RecommendationRequest,
+        search_plan: RecommendationSearchPlan | None = None,
     ) -> list[str]:
         candidates: list[str] = []
         text = self._request_text(recommendation_request)
+        if search_plan:
+            candidates.extend(search_plan.similar_to_titles)
 
         for pattern in SIMILARITY_REFERENCE_PATTERNS:
             candidates.extend(
@@ -842,6 +1053,86 @@ class TMDbClient:
             )
 
         return list(deduped.values())
+
+    def _dedupe_param_sets(
+        self,
+        param_sets: Sequence[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        deduped: list[dict[str, object]] = []
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        for params in param_sets:
+            key = tuple(sorted((name, str(value)) for name, value in params.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(params)
+        return deduped
+
+    def _quality_thresholds(
+        self,
+        search_plan: RecommendationSearchPlan | None = None,
+    ) -> tuple[float, int]:
+        min_vote_average = float(self.settings.tmdb_min_vote_average)
+        min_vote_count = int(self.settings.tmdb_min_vote_count)
+        if search_plan is None:
+            return min_vote_average, min_vote_count
+
+        if search_plan.relax_quality or search_plan.strictness == "low":
+            return max(6.0, min_vote_average - 0.7), max(50, min_vote_count // 10)
+        if search_plan.strictness == "medium" and self._has_niche_terms(search_plan):
+            return max(6.3, min_vote_average - 0.4), max(100, min_vote_count // 5)
+        return min_vote_average, min_vote_count
+
+    def _has_niche_terms(self, search_plan: RecommendationSearchPlan) -> bool:
+        niche_terms = {
+            "arthouse",
+            "cult",
+            "experimental",
+            "foreign",
+            "indie",
+            "melancholy",
+            "niche",
+            "obscure",
+            "quiet",
+            "slow burn",
+            "underrated",
+        }
+        normalized_terms = {
+            self._normalized_text(term)
+            for term in [
+                *search_plan.keywords,
+                *search_plan.tones,
+                *search_plan.themes,
+            ]
+        }
+        return bool(niche_terms.intersection(normalized_terms))
+
+    def _plan_keyword_terms(
+        self,
+        search_plan: RecommendationSearchPlan | None,
+    ) -> list[str]:
+        if search_plan is None:
+            return []
+        return list(
+            dict.fromkeys(
+                term
+                for term in [
+                    *search_plan.keywords,
+                    *search_plan.themes,
+                    *search_plan.tones,
+                    *search_plan.search_queries,
+                ]
+                if term.strip()
+            )
+        )
+
+    def _genre_ids(self, genres: Sequence[str]) -> list[int]:
+        genre_ids: list[int] = []
+        for genre in genres:
+            genre_id = TMDB_GENRE_IDS.get(self._normalized_text(genre))
+            if genre_id is not None and genre_id not in genre_ids:
+                genre_ids.append(genre_id)
+        return genre_ids
 
     def _candidate_limit(self) -> int:
         return max(1, min(self.settings.tmdb_candidate_limit, 100))
