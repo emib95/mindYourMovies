@@ -6,16 +6,16 @@ React TypeScript client for the MindYourMovies questionnaire.
 
 ```bash
 npm install
-cp .env.example .env
 npm run dev
 ```
 
-`VITE_API_BASE_URL` should point at the FastAPI backend. It defaults to
-`http://localhost:8000`.
+App defaults live in `src/config.ts`:
 
-`VITE_DONATION_URL` is optional. The app defaults to Emilio's Stripe Payment
-Link; set this variable only if the support link should point somewhere else.
+- Local dev uses `http://localhost:8000` for the API.
+- Production builds use `https://api.mindyourmovies.com`.
+- Donation link and creator photo path are set there too.
 
-`VITE_CREATOR_PHOTO_URL` controls the photo in that support section. By default,
-the app looks for `/emilio-banqueri.jpg`, so place that file in `public/` or set
-the variable to another hosted image URL.
+Optional `VITE_*` overrides are documented in `.env.example`. You only need a
+`.env` file when you want to change a default locally.
+
+Place the creator photo at `public/emilio-banqueri.jpg`.
