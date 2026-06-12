@@ -7,7 +7,7 @@ from openai import AsyncOpenAI, OpenAIError
 
 from app.config import Settings
 from app.recommendation_trace import get_trace
-from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
+from app.schemas import MovieCandidate, MovieDetails, RecommendationRequest, RecommendationResponse
 
 
 LANGUAGE_LABELS = {
@@ -86,6 +86,41 @@ AVAILABILITY_REGION_GUIDANCE = (
     "user explicitly asks for it."
 )
 
+MOVIE_DETAILS_GUIDANCE = (
+    "When reliable details are available from web search, include movie_details "
+    "with a short spoiler-free intro, two to five notable actors, the IMDb "
+    "rating, and the Rotten Tomatoes score. Use null for unknown text fields "
+    "and an empty actors list when cast is not verified. Do not invent ratings, "
+    "scores, or actors."
+)
+
+NULLABLE_STRING_SCHEMA = {
+    "anyOf": [
+        {"type": "string"},
+        {"type": "null"},
+    ],
+}
+
+MOVIE_DETAILS_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "intro": NULLABLE_STRING_SCHEMA,
+        "actors": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "imdb_rating": NULLABLE_STRING_SCHEMA,
+        "rotten_tomatoes_score": NULLABLE_STRING_SCHEMA,
+    },
+    "required": [
+        "intro",
+        "actors",
+        "imdb_rating",
+        "rotten_tomatoes_score",
+    ],
+}
+
 RECOMMENDATION_RESPONSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -95,6 +130,12 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
         "watch_link": {"type": "string"},
         "reason": {"type": "string"},
         "why_recommended": {"type": "string"},
+        "movie_details": {
+            "anyOf": [
+                MOVIE_DETAILS_RESPONSE_SCHEMA,
+                {"type": "null"},
+            ],
+        },
     },
     "required": [
         "movie_title",
@@ -102,6 +143,7 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
         "watch_link",
         "reason",
         "why_recommended",
+        "movie_details",
     ],
 }
 
@@ -124,6 +166,7 @@ class LLMRecommendationSuggestion:
     watch_link: str
     reason: str
     why_recommended: str
+    movie_details: MovieDetails | None = None
 
 
 class RecommendationEngine:
@@ -232,6 +275,7 @@ class RecommendationEngine:
                 watch_link=self._clean_text(payload.get("watch_link")),
                 reason=self._clean_text(payload.get("reason")),
                 why_recommended=self._clean_text(payload.get("why_recommended")),
+                movie_details=self._movie_details(payload.get("movie_details")),
             )
         ]
         if trace is not None:
@@ -383,6 +427,7 @@ class RecommendationEngine:
             tmdb_id=selected.tmdb_id,
             region=self._region(recommendation_request),
             language=recommendation_request.language,
+            movie_details=self._movie_details(llm_payload.get("movie_details")),
         )
 
     async def recommendation_from_suggestion(
@@ -414,6 +459,7 @@ class RecommendationEngine:
             tmdb_id=selected.tmdb_id,
             region=self._region(recommendation_request),
             language=recommendation_request.language,
+            movie_details=suggestion.movie_details,
         )
 
     def _fallback_recommendation(
@@ -484,6 +530,40 @@ class RecommendationEngine:
         if value is None:
             return ""
         return str(value).strip()
+
+    def _movie_details(self, value: object) -> MovieDetails | None:
+        if not isinstance(value, dict):
+            return None
+
+        intro = self._clean_text(value.get("intro")) or None
+        imdb_rating = self._clean_text(value.get("imdb_rating")) or None
+        rotten_tomatoes_score = (
+            self._clean_text(value.get("rotten_tomatoes_score")) or None
+        )
+        actors = self._clean_actor_names(value.get("actors"))
+
+        if not any([intro, actors, imdb_rating, rotten_tomatoes_score]):
+            return None
+
+        return MovieDetails(
+            intro=intro,
+            actors=actors,
+            imdb_rating=imdb_rating,
+            rotten_tomatoes_score=rotten_tomatoes_score,
+        )
+
+    def _clean_actor_names(self, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+
+        actors: list[str] = []
+        for item in value:
+            actor = self._clean_text(item)
+            if actor and actor not in actors:
+                actors.append(actor)
+            if len(actors) >= 8:
+                break
+        return actors
 
     def _watch_link(self, value: object, candidate: MovieCandidate) -> str:
         link = self._clean_text(value)
@@ -681,7 +761,8 @@ class RecommendationEngine:
             "the user's extra-cost preference: when false, avoid titles that are "
             "only rent or buy. Do not include excluded titles. Prefer official "
             "provider title URLs for watch_link when you can verify them; use an "
-            "empty string if you cannot find one. Return JSON only."
+            "empty string if you cannot find one. "
+            f"{MOVIE_DETAILS_GUIDANCE} Return JSON only."
         )
 
     def _suggest_movies_user_payload(
@@ -734,12 +815,13 @@ class RecommendationEngine:
             "HBO, or NOW title URL. If a direct title page is not available, use "
             "an official provider search page for the movie title. Do not return "
             "TMDb, JustWatch, Reelgood, IMDb, Rotten Tomatoes, or search engine "
-            "result pages as watch_link. Return JSON only with movie_title, "
-            "provider, watch_link, reason, and why_recommended. Use reason as a "
-            "short summary. Use why_recommended to explain in one or two "
-            "sentences why this movie fits the user's mood, group context, notes, "
-            "selected providers, availability, and extra-cost preference. Write "
-            "reason and why_recommended in "
+            "result pages as watch_link. "
+            f"{MOVIE_DETAILS_GUIDANCE} Return JSON only with movie_title, "
+            "provider, watch_link, reason, why_recommended, and movie_details. "
+            "Use reason as a short summary. Use why_recommended to explain in "
+            "one or two sentences why this movie fits the user's mood, group "
+            "context, notes, selected providers, availability, and extra-cost "
+            "preference. Write reason, why_recommended, and movie_details.intro in "
             f"{LANGUAGE_LABELS[recommendation_request.language]}. Do not invent "
             "titles or links."
         )

@@ -254,6 +254,7 @@ def _suggestion_with_verified_title(
         watch_link=suggestion.watch_link,
         reason=suggestion.reason,
         why_recommended=suggestion.why_recommended,
+        movie_details=suggestion.movie_details,
     )
 
 

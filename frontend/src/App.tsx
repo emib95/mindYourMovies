@@ -22,6 +22,13 @@ type GroupOptionId = 'me' | 'friends' | 'family' | 'date' | 'other'
 type Language = 'en' | 'es'
 type LocationStatus = 'detecting' | 'detected' | 'default' | 'error' | 'manual'
 
+type MovieDetails = {
+  intro?: string | null
+  actors?: string[] | null
+  imdb_rating?: string | null
+  rotten_tomatoes_score?: string | null
+}
+
 type Recommendation = {
   movie_title: string
   provider: string
@@ -31,6 +38,7 @@ type Recommendation = {
   tmdb_id: number | null
   region: string
   language: Language
+  movie_details?: MovieDetails | null
 }
 
 type ExcludedRecommendation = {
@@ -138,6 +146,13 @@ const translations = {
       'Threading your mood through the reels to find one movie worth pressing play.',
     submit: 'Recommend one movie',
     pick: "Tonight's pick",
+    movieDetails: 'Movie details',
+    intro: 'Intro',
+    cast: 'Cast',
+    ratings: {
+      imdb: 'IMDb',
+      rottenTomatoes: 'Rotten Tomatoes',
+    },
     whyRecommended: 'Why this recommendation?',
     watchOn: (provider: string) => `Watch on ${provider}`,
     differentRecommendation:
@@ -218,6 +233,13 @@ const translations = {
       'Pasando tu estado de ánimo por los carretes para encontrar una película que merezca darle al play.',
     submit: 'Recomendar una película',
     pick: 'La elección de hoy',
+    movieDetails: 'Detalles de la película',
+    intro: 'Introducción',
+    cast: 'Reparto',
+    ratings: {
+      imdb: 'IMDb',
+      rottenTomatoes: 'Rotten Tomatoes',
+    },
     whyRecommended: '¿Por qué esta recomendación?',
     watchOn: (provider: string) => `Ver en ${provider}`,
     differentRecommendation:
@@ -430,6 +452,31 @@ function App() {
     }
     return t.regionHelp[locationStatus](countryName)
   }, [countryName, locationStatus, t])
+
+  const movieDetails = recommendation?.movie_details ?? null
+  const movieRatings = useMemo(
+    () =>
+      movieDetails
+        ? [
+            {
+              label: t.ratings.imdb,
+              value: movieDetails.imdb_rating,
+            },
+            {
+              label: t.ratings.rottenTomatoes,
+              value: movieDetails.rotten_tomatoes_score,
+            },
+          ].filter(
+            (rating): rating is { label: string; value: string } =>
+              typeof rating.value === 'string' && rating.value.trim().length > 0,
+          )
+        : [],
+    [movieDetails, t],
+  )
+  const hasMovieDetails =
+    Boolean(movieDetails?.intro?.trim()) ||
+    Boolean(movieDetails?.actors?.length) ||
+    movieRatings.length > 0
 
   const toggleProvider = (providerId: ProviderId) => {
     setSelectedProviders((currentProviders) =>
@@ -727,6 +774,37 @@ function App() {
             <p className="eyebrow">{t.pick}</p>
             <h2>{recommendation.movie_title}</h2>
             <p className="recommendation-summary">{recommendation.reason}</p>
+            {hasMovieDetails && movieDetails ? (
+              <section className="movie-details" aria-labelledby="movie-details-title">
+                <h3 id="movie-details-title">{t.movieDetails}</h3>
+                {movieDetails.intro ? (
+                  <div className="movie-detail-section">
+                    <h4>{t.intro}</h4>
+                    <p>{movieDetails.intro}</p>
+                  </div>
+                ) : null}
+                {movieDetails.actors?.length ? (
+                  <div className="movie-detail-section">
+                    <h4>{t.cast}</h4>
+                    <ul className="actor-list">
+                      {movieDetails.actors.map((actor) => (
+                        <li key={actor}>{actor}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {movieRatings.length ? (
+                  <dl className="movie-ratings">
+                    {movieRatings.map((rating) => (
+                      <div className="movie-rating" key={rating.label}>
+                        <dt>{rating.label}</dt>
+                        <dd>{rating.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+              </section>
+            ) : null}
             <section className="recommendation-why">
               <h3>{t.whyRecommended}</h3>
               <p>{recommendation.why_recommended}</p>

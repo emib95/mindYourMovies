@@ -44,6 +44,9 @@ falls back to the original flow: title/reference searches, similar movies,
 classic-aware discovery, and provider availability build a ranked TMDb candidate
 list before asking the LLM to choose one movie. OpenAI web search is also used to
 find an official streaming-provider title page when one is not already known.
+When OpenAI can verify classic movie details, responses may also include optional
+`movie_details` with a spoiler-free intro, notable actors, IMDb rating, and
+Rotten Tomatoes score.
 
 ## LLM prompt construction
 

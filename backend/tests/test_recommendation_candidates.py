@@ -1,7 +1,7 @@
 import unittest
 
 from app.config import Settings
-from app.schemas import MovieCandidate, Provider, RecommendationRequest
+from app.schemas import MovieCandidate, MovieDetails, Provider, RecommendationRequest
 from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.tmdb import TMDbClient
@@ -327,6 +327,39 @@ class FallbackRecommendationTests(unittest.TestCase):
 
         self.assertEqual(link, "https://www.netflix.com/title/60011152")
 
+    def test_movie_details_parser_drops_empty_details(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+
+        self.assertIsNone(
+            engine._movie_details(
+                {
+                    "intro": " ",
+                    "actors": ["", "  "],
+                    "imdb_rating": None,
+                    "rotten_tomatoes_score": "",
+                }
+            )
+        )
+
+    def test_movie_details_parser_normalizes_verified_details(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+
+        details = engine._movie_details(
+            {
+                "intro": " A crime family epic. ",
+                "actors": ["Marlon Brando", "Al Pacino", "Marlon Brando"],
+                "imdb_rating": " 9.2/10 ",
+                "rotten_tomatoes_score": "97%",
+            }
+        )
+
+        self.assertIsNotNone(details)
+        assert details is not None
+        self.assertEqual(details.intro, "A crime family epic.")
+        self.assertEqual(details.actors, ["Marlon Brando", "Al Pacino"])
+        self.assertEqual(details.imdb_rating, "9.2/10")
+        self.assertEqual(details.rotten_tomatoes_score, "97%")
+
 
 class LLMPromptBuilderTests(unittest.TestCase):
     def test_suggestion_prompt_treats_region_as_availability_only(self) -> None:
@@ -339,6 +372,7 @@ class LLMPromptBuilderTests(unittest.TestCase):
         payload = engine._suggest_movies_user_payload(request, {"Already Seen"})
 
         self.assertIn("Do not treat availability_region as a preference", system_prompt)
+        self.assertIn("include movie_details", system_prompt)
         self.assertEqual(payload["availability_region"], "ES")
         self.assertNotIn("region", payload)
         self.assertEqual(
@@ -368,11 +402,18 @@ class LLMPromptBuilderTests(unittest.TestCase):
 
         self.assertIn("availability_region on the selected providers", system_prompt)
         self.assertIn("Do not treat availability_region as a preference", system_prompt)
+        self.assertIn("movie_details", system_prompt)
         self.assertEqual(payload["availability_region"], "ES")
         self.assertNotIn("region", payload["user_preferences"])
         self.assertEqual(payload["selected_providers"], ["netflix"])
         self.assertEqual(payload["candidates"][0]["title"], "The Godfather")
         self.assertNotIn("watch_link", payload["candidates"][0])
+
+    def test_recommendation_schema_allows_nullable_movie_details(self) -> None:
+        from app.services.llm import RECOMMENDATION_RESPONSE_SCHEMA
+
+        self.assertIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["required"])
+        self.assertIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["properties"])
 
 
 class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
@@ -388,6 +429,12 @@ class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
             watch_link="https://www.themoviedb.org/movie/12445/watch?locale=GB",
             reason="A warm Italian classic.",
             why_recommended="It matches the Italian cinema request.",
+            movie_details=MovieDetails(
+                intro="A filmmaker remembers the village cinema of his childhood.",
+                actors=["Philippe Noiret", "Salvatore Cascio"],
+                imdb_rating="8.5/10",
+                rotten_tomatoes_score="90%",
+            ),
         )
 
         response = await engine.recommendation_from_suggestion(
@@ -403,6 +450,9 @@ class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
             "https://www.netflix.com/search?q=Cinema+Paradiso",
         )
         self.assertEqual(response.reason, "A warm Italian classic.")
+        self.assertIsNotNone(response.movie_details)
+        assert response.movie_details is not None
+        self.assertEqual(response.movie_details.imdb_rating, "8.5/10")
 
 
 if __name__ == "__main__":
