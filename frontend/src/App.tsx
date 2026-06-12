@@ -5,6 +5,7 @@ import mindTheMovieLogo from './assets/mind-the-movie.svg'
 import { apiBaseUrl, creatorPhotoUrl, donationUrl } from './config'
 
 type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
+type GroupOptionId = 'me' | 'friends' | 'family' | 'date' | 'other'
 type Language = 'en' | 'es'
 type LocationStatus = 'detecting' | 'detected' | 'default' | 'error' | 'manual'
 
@@ -36,6 +37,14 @@ const providers: Array<{ id: ProviderId; label: string }> = [
   { id: 'prime', label: 'Prime Video' },
   { id: 'youtube', label: 'YouTube' },
   { id: 'hbo', label: 'HBO / NOW' },
+]
+
+const groupOptionIds: GroupOptionId[] = [
+  'me',
+  'friends',
+  'family',
+  'date',
+  'other',
 ]
 
 const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
@@ -113,8 +122,16 @@ const translations = {
     moodLabel: 'What do you feel like watching?',
     moodPlaceholder:
       'Funny, tense thriller, comfort movie, visually stunning...',
-    groupLabel: 'Who is watching?',
-    groupPlaceholder: 'Date night, family, friends who cannot agree...',
+    groupLegend: 'Who is watching?',
+    groupOptions: {
+      me: 'Me',
+      friends: 'Friends',
+      family: 'Family',
+      date: 'Date',
+      other: 'Other',
+    },
+    groupOtherLabel: 'Tell us more',
+    groupOtherPlaceholder: 'Date night, family, friends who cannot agree...',
     notesLabel: 'Optional comment',
     notesPlaceholder: 'Avoid horror, under two hours, no subtitles tonight...',
     loading: 'Rolling...',
@@ -193,8 +210,16 @@ const translations = {
     moodLabel: '¿Qué te apetece ver?',
     moodPlaceholder:
       'Comedia, thriller tenso, película reconfortante, algo visual...',
-    groupLabel: '¿Quién va a ver la película?',
-    groupPlaceholder: 'Cita, familia, amigos que no se ponen de acuerdo...',
+    groupLegend: '¿Quién va a ver la película?',
+    groupOptions: {
+      me: 'Yo',
+      friends: 'Amigos',
+      family: 'Familia',
+      date: 'Cita',
+      other: 'Otro',
+    },
+    groupOtherLabel: 'Cuéntanos más',
+    groupOtherPlaceholder: 'Cita, familia, amigos que no se ponen de acuerdo...',
     notesLabel: 'Comentario opcional',
     notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtítulos hoy...',
     loading: 'Rodando...',
@@ -284,7 +309,8 @@ function App() {
   const [locationStatus, setLocationStatus] =
     useState<LocationStatus>('detecting')
   const [mood, setMood] = useState('')
-  const [groupContext, setGroupContext] = useState('')
+  const [groupSelections, setGroupSelections] = useState<GroupOptionId[]>([])
+  const [groupOtherText, setGroupOtherText] = useState('')
   const [notes, setNotes] = useState('')
   const [allowExtraCosts, setAllowExtraCosts] = useState(false)
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
@@ -390,6 +416,25 @@ function App() {
         : [...currentProviders, providerId],
     )
   }
+
+  const toggleGroupOption = (optionId: GroupOptionId) => {
+    setGroupSelections((currentOptions) =>
+      currentOptions.includes(optionId)
+        ? currentOptions.filter((currentOption) => currentOption !== optionId)
+        : [...currentOptions, optionId],
+    )
+  }
+
+  const groupContext = useMemo(
+    () =>
+      groupSelections
+        .map((optionId) =>
+          optionId === 'other' ? groupOtherText.trim() : t.groupOptions[optionId],
+        )
+        .filter((part) => part.length > 0)
+        .join(', '),
+    [groupOtherText, groupSelections, t],
+  )
 
   const selectRegion = (newRegion: string) => {
     hasManualRegion.current = true
@@ -580,14 +625,32 @@ function App() {
             />
           </label>
 
-          <label className="field">
-            <span>{t.groupLabel}</span>
-            <input
-              onChange={(event) => setGroupContext(event.target.value)}
-              placeholder={t.groupPlaceholder}
-              value={groupContext}
-            />
-          </label>
+          <fieldset>
+            <legend>{t.groupLegend}</legend>
+            <div className="provider-grid group-grid">
+              {groupOptionIds.map((optionId) => (
+                <label className="provider-card" key={optionId}>
+                  <input
+                    checked={groupSelections.includes(optionId)}
+                    onChange={() => toggleGroupOption(optionId)}
+                    type="checkbox"
+                  />
+                  <span>{t.groupOptions[optionId]}</span>
+                </label>
+              ))}
+            </div>
+
+            {groupSelections.includes('other') ? (
+              <label className="field group-other-field">
+                <span>{t.groupOtherLabel}</span>
+                <input
+                  onChange={(event) => setGroupOtherText(event.target.value)}
+                  placeholder={t.groupOtherPlaceholder}
+                  value={groupOtherText}
+                />
+              </label>
+            ) : null}
+          </fieldset>
 
           <label className="field">
             <span>{t.notesLabel}</span>
