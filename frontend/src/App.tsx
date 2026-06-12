@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import mindTheMovieLogo from './assets/mind-the-movie.svg'
 import { apiBaseUrl, creatorPhotoUrl, donationUrl } from './config'
+import { countryNameFor, regionCodes } from './countries'
 
 type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
 type GenreId =
@@ -74,25 +75,6 @@ const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
   { id: 'es', flag: '🇪🇸', path: '/es' },
 ]
 
-const regionOptions = [
-  'GB',
-  'US',
-  'ES',
-  'MX',
-  'AR',
-  'CO',
-  'CL',
-  'PE',
-  'CA',
-  'AU',
-  'IE',
-  'FR',
-  'DE',
-  'IT',
-  'NL',
-  'BR',
-]
-
 const translations = {
   en: {
     appAlt: 'Mind the Movie',
@@ -118,24 +100,6 @@ const translations = {
     languages: {
       en: 'English',
       es: 'Spanish',
-    },
-    countries: {
-      GB: 'United Kingdom',
-      US: 'United States',
-      ES: 'Spain',
-      MX: 'Mexico',
-      AR: 'Argentina',
-      CO: 'Colombia',
-      CL: 'Chile',
-      PE: 'Peru',
-      CA: 'Canada',
-      AU: 'Australia',
-      IE: 'Ireland',
-      FR: 'France',
-      DE: 'Germany',
-      IT: 'Italy',
-      NL: 'Netherlands',
-      BR: 'Brazil',
     },
     providerLegend: 'Which providers can you use?',
     paidOption: 'I am willing to pay extra for rentals or purchases.',
@@ -217,24 +181,6 @@ const translations = {
       en: 'Inglés',
       es: 'Español',
     },
-    countries: {
-      GB: 'Reino Unido',
-      US: 'Estados Unidos',
-      ES: 'España',
-      MX: 'México',
-      AR: 'Argentina',
-      CO: 'Colombia',
-      CL: 'Chile',
-      PE: 'Perú',
-      CA: 'Canadá',
-      AU: 'Australia',
-      IE: 'Irlanda',
-      FR: 'Francia',
-      DE: 'Alemania',
-      IT: 'Italia',
-      NL: 'Países Bajos',
-      BR: 'Brasil',
-    },
     providerLegend: '¿Qué plataformas puedes usar?',
     paidOption: 'Estoy dispuesto a pagar extra por alquileres o compras.',
     paidOptionHelp:
@@ -299,6 +245,11 @@ const languageFromPath = (pathname = window.location.pathname): Language => {
     : 'en'
 }
 
+const isUkRoute = (pathname = window.location.pathname): boolean => {
+  const normalizedPath = pathname.toLowerCase().replace(/\/+$/, '') || '/'
+  return normalizedPath === '/uk' || normalizedPath.startsWith('/uk/')
+}
+
 const updateLanguageRoute = (
   newLanguage: Language,
   mode: 'push' | 'replace' = 'push',
@@ -343,13 +294,15 @@ const appendExcludedRecommendation = (
 
 function App() {
   const initialRouteLanguage = languageFromPath()
+  const [isStaticUkRoute] = useState(() => isUkRoute())
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
     'netflix',
   ])
   const [language, setLanguage] = useState<Language>(initialRouteLanguage)
   const [region, setRegion] = useState('GB')
-  const [locationStatus, setLocationStatus] =
-    useState<LocationStatus>('detecting')
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(
+    isStaticUkRoute ? 'manual' : 'detecting',
+  )
   const [genreSelections, setGenreSelections] = useState<GenreId[]>([])
   const [groupSelection, setGroupSelection] = useState<GroupOptionId>('me')
   const [groupOtherText, setGroupOtherText] = useState('')
@@ -366,7 +319,7 @@ function App() {
   const [showCreatorPhoto, setShowCreatorPhoto] = useState(
     Boolean(creatorPhotoUrl),
   )
-  const hasManualRegion = useRef(false)
+  const hasManualRegion = useRef(isStaticUkRoute)
   const hasManualLanguage = useRef(initialRouteLanguage === 'es')
   const t = translations[language]
 
@@ -387,6 +340,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (isStaticUkRoute) {
+      return
+    }
+
     let isMounted = true
 
     const detectLocation = async () => {
@@ -431,7 +388,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [isStaticUkRoute])
 
   const canSubmit = useMemo(
     () =>
@@ -442,7 +399,28 @@ function App() {
     [genreSelections.length, isLoading, region, selectedProviders.length],
   )
 
-  const countryName = t.countries[region as keyof typeof t.countries] ?? region
+  const regionOptions = useMemo(() => {
+    const options: Array<{ code: string; label: string }> = regionCodes.map((regionCode) => ({
+      code: regionCode,
+      label: countryNameFor(regionCode, language),
+    }))
+
+    if (
+      /^[A-Z]{2}$/.test(region) &&
+      !(regionCodes as readonly string[]).includes(region)
+    ) {
+      options.push({
+        code: region,
+        label: countryNameFor(region, language),
+      })
+    }
+
+    return options.sort((firstOption, secondOption) =>
+      firstOption.label.localeCompare(secondOption.label, language),
+    )
+  }, [language, region])
+
+  const countryName = countryNameFor(region, language)
 
   const locationMessage = useMemo(() => {
     if (locationStatus === 'detecting') {
@@ -606,9 +584,9 @@ function App() {
             onChange={(event) => selectRegion(event.target.value)}
             value={region}
           >
-            {regionOptions.map((regionCode) => (
-              <option key={regionCode} value={regionCode}>
-                {t.countries[regionCode as keyof typeof t.countries] ?? regionCode}
+            {regionOptions.map((regionOption) => (
+              <option key={regionOption.code} value={regionOption.code}>
+                {regionOption.label}
               </option>
             ))}
           </select>
