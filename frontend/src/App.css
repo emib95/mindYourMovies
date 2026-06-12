@@ -472,27 +472,15 @@ button:disabled {
 
   .top-controls {
     align-content: start;
-    align-items: stretch;
-    flex-direction: column;
     justify-self: end;
-    width: min(100%, 360px);
   }
 
   .language-switcher {
-    box-sizing: border-box;
-    justify-content: space-between;
-    width: 100%;
-  }
-
-  .language-option {
-    flex: 1;
-    justify-content: center;
+    flex: 0 0 auto;
   }
 
   .location-control {
-    box-sizing: border-box;
-    max-width: none;
-    width: 100%;
+    width: min(100%, 360px);
   }
 
   .hero {
