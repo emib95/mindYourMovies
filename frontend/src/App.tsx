@@ -2,6 +2,8 @@ import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import mindTheMovieLogo from './assets/mind-the-movie.svg'
+import flagGb from './assets/flag-gb.svg'
+import flagEs from './assets/flag-es.svg'
 import { apiBaseUrl, creatorPhotoUrl, donationUrl } from './config'
 import { countryNameFor, regionCodes } from './countries'
 
@@ -40,8 +42,8 @@ const providers: Array<{ id: ProviderId; label: string }> = [
 ]
 
 const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
-  { id: 'en', flag: '🇬🇧', path: '/' },
-  { id: 'es', flag: '🇪🇸', path: '/es' },
+  { id: 'en', flag: flagGb, path: '/' },
+  { id: 'es', flag: flagEs, path: '/es' },
 ]
 
 const translations = {
@@ -479,9 +481,12 @@ function App() {
               key={option.id}
               onClick={(event) => selectLanguage(event, option.id)}
             >
-              <span aria-hidden="true" className="language-flag">
-                {option.flag}
-              </span>
+              <img
+                aria-hidden="true"
+                className="language-flag"
+                src={option.flag}
+                alt=""
+              />
               <span>{t.languages[option.id]}</span>
             </a>
           ))}
