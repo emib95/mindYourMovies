@@ -153,9 +153,6 @@ const translations = {
       documentary: 'Documentary',
       animation: 'Animation',
     },
-    moodLabel: 'Anything else? (optional)',
-    moodPlaceholder:
-      'Comfort movie, visually stunning, must have a happy ending...',
     groupLegend: 'Who is watching?',
     groupOptions: {
       me: 'Me',
@@ -166,8 +163,9 @@ const translations = {
     },
     groupOtherLabel: 'Tell us more',
     groupOtherPlaceholder: 'Coworkers, roommates, a big group, kids...',
-    notesLabel: 'Optional comment',
-    notesPlaceholder: 'Avoid horror, under two hours, no subtitles tonight...',
+    notesLabel: 'Give us more to work with (optional)',
+    notesPlaceholder:
+      'The more context you give, the better the recommendation you get. Try a favourite director, an actor, a niche theme, a movie from the 70s...',
     loading: 'Rolling...',
     loadingTitle: 'Spooling up the projector',
     loadingDetail:
@@ -253,9 +251,6 @@ const translations = {
       documentary: 'Documental',
       animation: 'Animación',
     },
-    moodLabel: '¿Algo más? (opcional)',
-    moodPlaceholder:
-      'Película reconfortante, visualmente impactante, final feliz...',
     groupLegend: '¿Quién va a ver la película?',
     groupOptions: {
       me: 'Yo',
@@ -266,8 +261,9 @@ const translations = {
     },
     groupOtherLabel: 'Cuéntanos más',
     groupOtherPlaceholder: 'Compañeros de piso, trabajo, un grupo grande...',
-    notesLabel: 'Comentario opcional',
-    notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtítulos hoy...',
+    notesLabel: 'Danos más pistas (opcional)',
+    notesPlaceholder:
+      'Cuanto más contexto nos dés, mejor será la recomendación. Prueba con un director o actor favorito, un tema poco habitual, una película de los 70...',
     loading: 'Rodando...',
     loadingTitle: 'Preparando el proyector',
     loadingDetail:
@@ -354,7 +350,6 @@ function App() {
   const [region, setRegion] = useState('GB')
   const [locationStatus, setLocationStatus] =
     useState<LocationStatus>('detecting')
-  const [mood, setMood] = useState('')
   const [genreSelections, setGenreSelections] = useState<GenreId[]>([])
   const [groupSelection, setGroupSelection] = useState<GroupOptionId>('me')
   const [groupOtherText, setGroupOtherText] = useState('')
@@ -441,10 +436,10 @@ function App() {
   const canSubmit = useMemo(
     () =>
       selectedProviders.length > 0 &&
-      (genreSelections.length > 0 || mood.trim().length > 1) &&
+      genreSelections.length > 0 &&
       /^[A-Z]{2}$/.test(region) &&
       !isLoading,
-    [genreSelections.length, isLoading, mood, region, selectedProviders.length],
+    [genreSelections.length, isLoading, region, selectedProviders.length],
   )
 
   const countryName = t.countries[region as keyof typeof t.countries] ?? region
@@ -472,10 +467,10 @@ function App() {
     )
   }
 
-  const moodValue = useMemo(() => {
-    const genreLabels = genreSelections.map((genreId) => t.genreOptions[genreId])
-    return [...genreLabels, mood.trim()].filter((part) => part.length > 0).join(', ')
-  }, [genreSelections, mood, t])
+  const genreSummary = useMemo(
+    () => genreSelections.map((genreId) => t.genreOptions[genreId]).join(', '),
+    [genreSelections, t],
+  )
 
   const groupContext = useMemo(
     () =>
@@ -526,7 +521,7 @@ function App() {
         },
         body: JSON.stringify({
           providers: selectedProviders,
-          mood: moodValue,
+          mood: genreSummary,
           region,
           language,
           allow_extra_costs: allowExtraCosts,
@@ -679,15 +674,6 @@ function App() {
               ))}
             </div>
           </fieldset>
-
-          <label className="field">
-            <span>{t.moodLabel}</span>
-            <input
-              onChange={(event) => setMood(event.target.value)}
-              placeholder={t.moodPlaceholder}
-              value={mood}
-            />
-          </label>
 
           <fieldset>
             <legend>{t.groupLegend}</legend>
