@@ -308,8 +308,6 @@ function App() {
   const [genreSelections, setGenreSelections] = useState<GenreId[]>([])
   const [groupSelection, setGroupSelection] = useState<GroupOptionId>('me')
   const [groupOtherText, setGroupOtherText] = useState('')
-  const [mood, setMood] = useState('')
-  const [groupContext, setGroupContext] = useState('')
   const [notes, setNotes] = useState('')
   const [allowExtraCosts, setAllowExtraCosts] = useState(false)
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
