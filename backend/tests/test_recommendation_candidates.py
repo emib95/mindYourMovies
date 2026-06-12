@@ -328,6 +328,53 @@ class FallbackRecommendationTests(unittest.TestCase):
         self.assertEqual(link, "https://www.netflix.com/title/60011152")
 
 
+class LLMPromptBuilderTests(unittest.TestCase):
+    def test_suggestion_prompt_treats_region_as_availability_only(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        request = make_request("A sharp funny thriller").model_copy(
+            update={"region": "ES"}
+        )
+
+        system_prompt = engine._suggest_movies_system_prompt()
+        payload = engine._suggest_movies_user_payload(request, {"Already Seen"})
+
+        self.assertIn("Do not treat availability_region as a preference", system_prompt)
+        self.assertEqual(payload["availability_region"], "ES")
+        self.assertNotIn("region", payload)
+        self.assertEqual(
+            payload["user_preferences"],
+            {
+                "mood": "A sharp funny thriller",
+                "group_context": None,
+                "notes": None,
+            },
+        )
+
+    def test_candidate_prompt_keeps_availability_separate_from_preferences(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        request = make_request("Something warm and acclaimed").model_copy(
+            update={
+                "region": "ES",
+                "group_context": "Two friends",
+                "notes": "No animation",
+            }
+        )
+        candidates = [
+            make_candidate(238, "The Godfather", "1972", 8.7, 20000, 80.0),
+        ]
+
+        system_prompt = engine._recommend_system_prompt(request)
+        payload = engine._recommend_user_payload(request, candidates)
+
+        self.assertIn("availability_region on the selected providers", system_prompt)
+        self.assertIn("Do not treat availability_region as a preference", system_prompt)
+        self.assertEqual(payload["availability_region"], "ES")
+        self.assertNotIn("region", payload["user_preferences"])
+        self.assertEqual(payload["selected_providers"], ["netflix"])
+        self.assertEqual(payload["candidates"][0]["title"], "The Godfather")
+        self.assertNotIn("watch_link", payload["candidates"][0])
+
+
 class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
     async def test_response_from_suggestion_uses_verified_provider_and_search_link(
         self,
