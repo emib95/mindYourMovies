@@ -26,6 +26,7 @@
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 999px;
+  box-sizing: border-box;
   box-shadow: var(--shadow);
   display: inline-flex;
   gap: 4px;
@@ -59,11 +60,13 @@
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 18px;
+  box-sizing: border-box;
   box-shadow: var(--shadow);
   display: grid;
-  gap: 6px;
+  gap: 10px;
   max-width: 430px;
-  padding: 12px 14px;
+  min-width: 0;
+  padding: 18px 20px;
 }
 
 .location-label {
@@ -77,6 +80,7 @@
 .location-message {
   color: var(--text);
   font-size: 0.92rem;
+  line-height: 1.55;
 }
 
 .location-control select {
@@ -84,9 +88,13 @@
   background: var(--field-bg);
   border: 1px solid var(--border);
   border-radius: 999px;
+  box-sizing: border-box;
   color: var(--text-h);
+  display: block;
   font: inherit;
+  min-width: 0;
   padding: 10px 14px;
+  width: 100%;
 }
 
 .hero {
