@@ -76,6 +76,16 @@ NON_PROVIDER_DOMAINS = (
     "bing.com",
 )
 
+AVAILABILITY_REGION_GUIDANCE = (
+    "Use availability_region and web-search location only as market constraints "
+    "for streaming availability, provider catalogs, pricing, and watch links. "
+    "Do not treat availability_region as a preference for movies from, set in, "
+    "or about that country, or for that country's language. Recommend films "
+    "from any country when they best match the user's explicit taste signals. "
+    "Only prioritize a country, national cinema, language, or culture when the "
+    "user explicitly asks for it."
+)
+
 RECOMMENDATION_RESPONSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -149,45 +159,15 @@ class RecommendationEngine:
                     input=[
                         {
                             "role": "system",
-                            "content": (
-                                "You recommend movies for a user who wants one thing to "
-                                "watch now. Use web search to identify exactly one movie "
-                                "that matches the user's request and is available in the "
-                                "requested country on one of the selected streaming "
-                                "providers. Interpret niche requests semantically, including "
-                                "directors, national cinemas, auteurs, eras, languages, "
-                                "and specific styles. For example, a Sorrentino request "
-                                "means films by or closely connected to Paolo Sorrentino, "
-                                "and an Italian movie request should prioritize Italian "
-                                "films rather than only mainstream English-language films. "
-                                "Respect the user's extra-cost preference: when false, avoid "
-                                "titles that are only rent or buy. Do not include excluded "
-                                "titles. Prefer official provider title URLs for watch_link "
-                                "when you can verify them; use an empty string if you "
-                                "cannot find one. Return JSON only."
-                            ),
+                            "content": self._suggest_movies_system_prompt(),
                         },
                         {
                             "role": "user",
                             "content": json.dumps(
-                                {
-                                    "region": self._region(recommendation_request),
-                                    "language": recommendation_request.language,
-                                    "selected_providers": [
-                                        provider.value
-                                        for provider in recommendation_request.providers
-                                    ],
-                                    "allow_extra_costs": (
-                                        recommendation_request.allow_extra_costs
-                                    ),
-                                    "user_answers": recommendation_request.model_dump(
-                                        mode="json"
-                                    ),
-                                    "excluded_titles": sorted(excluded_titles),
-                                    "response_language": LANGUAGE_LABELS[
-                                        recommendation_request.language
-                                    ],
-                                }
+                                self._suggest_movies_user_payload(
+                                    recommendation_request,
+                                    excluded_titles,
+                                )
                             ),
                         },
                     ],
@@ -302,58 +282,17 @@ class RecommendationEngine:
                     input=[
                         {
                             "role": "system",
-                            "content": (
-                                "You help people stop scrolling and pick one movie. "
-                                "Choose exactly one title from the candidate list. "
-                                "Interpret the user's intent semantically in any language. "
-                                "When the user asks for something similar, like, comparable, "
-                                "parecido, similar a, algo como, del estilo de, or equivalent "
-                                "wording around a named title, treat that title only as a "
-                                "reference and choose a different candidate with a close tonal, "
-                                "genre, era, or reputation match. Never choose the reference "
-                                "title itself in that case, including spelling, casing, "
-                                "punctuation, translation, or minor-misspelling variants of "
-                                "that title. If the user names a specific title as the movie "
-                                "they want and not merely as a similarity reference, strongly "
-                                "prefer that exact title when it is in the candidate list. If "
-                                "the named title is not available, choose a close match. "
-                                "Favor well-rated candidates with stronger vote counts and popularity. "
-                                "For classic, masterpiece, or cinema-canon requests, prioritize "
-                                "older, highly rated, widely voted films over new releases. "
-                                "Respect the user's allow_extra_costs preference when explaining the choice. "
-                                "Use web search to find the official watch page for the chosen "
-                                "movie on one of the selected providers available in the user's "
-                                "region. Prefer a direct title deep link, such as a Netflix, "
-                                "Disney+, Prime Video, YouTube, Max, HBO, or NOW title URL. If "
-                                "a direct title page is not available, use an official provider "
-                                "search page for the movie title. Do not return TMDb, JustWatch, "
-                                "Reelgood, IMDb, Rotten Tomatoes, or search engine result pages "
-                                "as watch_link. "
-                                "Return JSON only with movie_title, provider, watch_link, reason, "
-                                "and why_recommended. Use reason as a short summary. "
-                                "Use why_recommended to explain in one or two sentences why this "
-                                "movie fits the user's mood, group context, notes, selected providers, "
-                                "region, and extra-cost preference. "
-                                "Write reason and why_recommended in "
-                                f"{LANGUAGE_LABELS[recommendation_request.language]}. "
-                                "Do not invent titles or links."
+                            "content": self._recommend_system_prompt(
+                                recommendation_request
                             ),
                         },
                         {
                             "role": "user",
                             "content": json.dumps(
-                                {
-                                    "region": self._region(recommendation_request),
-                                    "language": recommendation_request.language,
-                                    "user_answers": recommendation_request.model_dump(mode="json"),
-                                    "candidates": [
-                                        candidate.model_dump(
-                                            mode="json",
-                                            exclude={"watch_link"},
-                                        )
-                                        for candidate in candidates
-                                    ],
-                                }
+                                self._recommend_user_payload(
+                                    recommendation_request,
+                                    candidates,
+                                )
                             ),
                         },
                     ],
@@ -627,7 +566,9 @@ class RecommendationEngine:
                             "role": "system",
                             "content": (
                                 "Use web search to find the official streaming-provider "
-                                "title page for this movie in the requested country. "
+                                "title page for this movie in availability_region. "
+                                "Use availability_region only to verify the provider "
+                                "catalog and link market; it is not a content preference. "
                                 "Return an empty string if you cannot verify a direct "
                                 "official provider URL. Do not return TMDb, JustWatch, "
                                 "Reelgood, IMDb, Rotten Tomatoes, or search engine pages."
@@ -639,7 +580,9 @@ class RecommendationEngine:
                                 {
                                     "movie_title": candidate.title,
                                     "tmdb_id": candidate.tmdb_id,
-                                    "region": self._region(recommendation_request),
+                                    "availability_region": self._region(
+                                        recommendation_request
+                                    ),
                                     "verified_providers": candidate.provider_names,
                                     "suggested_provider": provider,
                                 }
@@ -722,6 +665,117 @@ class RecommendationEngine:
             if provider_name.lower() == normalized_suggestion:
                 return provider_name
         return ", ".join(selected.provider_names)
+
+    def _suggest_movies_system_prompt(self) -> str:
+        return (
+            "You recommend movies for a user who wants one thing to watch now. "
+            "Use web search to identify exactly one movie that matches the user's "
+            "request and is available in availability_region on one of the "
+            "selected streaming providers. "
+            f"{AVAILABILITY_REGION_GUIDANCE} "
+            "Interpret niche requests semantically, including directors, national "
+            "cinemas, auteurs, eras, languages, and specific styles. For example, "
+            "a Sorrentino request means films by or closely connected to Paolo "
+            "Sorrentino, and an Italian movie request should prioritize Italian "
+            "films rather than only mainstream English-language films. Respect "
+            "the user's extra-cost preference: when false, avoid titles that are "
+            "only rent or buy. Do not include excluded titles. Prefer official "
+            "provider title URLs for watch_link when you can verify them; use an "
+            "empty string if you cannot find one. Return JSON only."
+        )
+
+    def _suggest_movies_user_payload(
+        self,
+        recommendation_request: RecommendationRequest,
+        excluded_titles: set[str],
+    ) -> dict[str, object]:
+        return {
+            "availability_region": self._region(recommendation_request),
+            "language": recommendation_request.language,
+            "selected_providers": [
+                provider.value for provider in recommendation_request.providers
+            ],
+            "allow_extra_costs": recommendation_request.allow_extra_costs,
+            "user_preferences": self._user_preferences_payload(
+                recommendation_request
+            ),
+            "excluded_titles": sorted(excluded_titles),
+            "response_language": LANGUAGE_LABELS[recommendation_request.language],
+        }
+
+    def _recommend_system_prompt(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> str:
+        return (
+            "You help people stop scrolling and pick one movie. Choose exactly "
+            "one title from the candidate list. The candidate list has already "
+            "been filtered for availability in availability_region on the "
+            "selected providers. "
+            f"{AVAILABILITY_REGION_GUIDANCE} "
+            "Interpret the user's intent semantically in any language. When the "
+            "user asks for something similar, like, comparable, parecido, similar "
+            "a, algo como, del estilo de, or equivalent wording around a named "
+            "title, treat that title only as a reference and choose a different "
+            "candidate with a close tonal, genre, era, or reputation match. Never "
+            "choose the reference title itself in that case, including spelling, "
+            "casing, punctuation, translation, or minor-misspelling variants of "
+            "that title. If the user names a specific title as the movie they "
+            "want and not merely as a similarity reference, strongly prefer that "
+            "exact title when it is in the candidate list. If the named title is "
+            "not available, choose a close match. Favor well-rated candidates "
+            "with stronger vote counts and popularity. For classic, masterpiece, "
+            "or cinema-canon requests, prioritize older, highly rated, widely "
+            "voted films over new releases. Respect the user's allow_extra_costs "
+            "preference when explaining the choice. Use web search to find the "
+            "official watch page for the chosen movie on one of the selected "
+            "providers available in availability_region. Prefer a direct title "
+            "deep link, such as a Netflix, Disney+, Prime Video, YouTube, Max, "
+            "HBO, or NOW title URL. If a direct title page is not available, use "
+            "an official provider search page for the movie title. Do not return "
+            "TMDb, JustWatch, Reelgood, IMDb, Rotten Tomatoes, or search engine "
+            "result pages as watch_link. Return JSON only with movie_title, "
+            "provider, watch_link, reason, and why_recommended. Use reason as a "
+            "short summary. Use why_recommended to explain in one or two "
+            "sentences why this movie fits the user's mood, group context, notes, "
+            "selected providers, availability, and extra-cost preference. Write "
+            "reason and why_recommended in "
+            f"{LANGUAGE_LABELS[recommendation_request.language]}. Do not invent "
+            "titles or links."
+        )
+
+    def _recommend_user_payload(
+        self,
+        recommendation_request: RecommendationRequest,
+        candidates: list[MovieCandidate],
+    ) -> dict[str, object]:
+        return {
+            "availability_region": self._region(recommendation_request),
+            "language": recommendation_request.language,
+            "selected_providers": [
+                provider.value for provider in recommendation_request.providers
+            ],
+            "allow_extra_costs": recommendation_request.allow_extra_costs,
+            "user_preferences": self._user_preferences_payload(
+                recommendation_request
+            ),
+            "candidates": [
+                candidate.model_dump(
+                    mode="json",
+                    exclude={"watch_link"},
+                )
+                for candidate in candidates
+            ],
+        }
+
+    def _user_preferences_payload(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> dict[str, object]:
+        return recommendation_request.model_dump(
+            mode="json",
+            include={"mood", "group_context", "notes"},
+        )
 
     def _is_supported_provider_url(self, link: str) -> bool:
         if not link:
