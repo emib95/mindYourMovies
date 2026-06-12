@@ -1,7 +1,7 @@
 import unittest
 
 from app.config import Settings
-from app.schemas import MovieCandidate, MovieDetails, Provider, RecommendationRequest
+from app.schemas import MovieCandidate, Provider, RecommendationRequest
 from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.tmdb import TMDbClient
@@ -372,7 +372,7 @@ class LLMPromptBuilderTests(unittest.TestCase):
         payload = engine._suggest_movies_user_payload(request, {"Already Seen"})
 
         self.assertIn("Do not treat availability_region as a preference", system_prompt)
-        self.assertIn("include movie_details", system_prompt)
+        self.assertNotIn("movie_details", system_prompt)
         self.assertEqual(payload["availability_region"], "ES")
         self.assertNotIn("region", payload)
         self.assertEqual(
@@ -402,18 +402,28 @@ class LLMPromptBuilderTests(unittest.TestCase):
 
         self.assertIn("availability_region on the selected providers", system_prompt)
         self.assertIn("Do not treat availability_region as a preference", system_prompt)
-        self.assertIn("movie_details", system_prompt)
+        self.assertNotIn("movie_details", system_prompt)
         self.assertEqual(payload["availability_region"], "ES")
         self.assertNotIn("region", payload["user_preferences"])
         self.assertEqual(payload["selected_providers"], ["netflix"])
         self.assertEqual(payload["candidates"][0]["title"], "The Godfather")
         self.assertNotIn("watch_link", payload["candidates"][0])
 
-    def test_recommendation_schema_allows_nullable_movie_details(self) -> None:
+    def test_recommendation_selection_schema_excludes_movie_details(self) -> None:
         from app.services.llm import RECOMMENDATION_RESPONSE_SCHEMA
 
-        self.assertIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["required"])
-        self.assertIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["properties"])
+        self.assertNotIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["required"])
+        self.assertNotIn("movie_details", RECOMMENDATION_RESPONSE_SCHEMA["properties"])
+
+    def test_movie_details_prompt_is_separate_from_selection_prompt(self) -> None:
+        engine = RecommendationEngine(Settings(openai_api_key="test-key"))
+        system_prompt = engine._movie_details_system_prompt(
+            make_request("Something warm")
+        )
+
+        self.assertIn("already selected movie recommendation", system_prompt)
+        self.assertIn("IMDb", system_prompt)
+        self.assertIn("Rotten Tomatoes", system_prompt)
 
 
 class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
@@ -429,12 +439,6 @@ class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
             watch_link="https://www.themoviedb.org/movie/12445/watch?locale=GB",
             reason="A warm Italian classic.",
             why_recommended="It matches the Italian cinema request.",
-            movie_details=MovieDetails(
-                intro="A filmmaker remembers the village cinema of his childhood.",
-                actors=["Philippe Noiret", "Salvatore Cascio"],
-                imdb_rating="8.5/10",
-                rotten_tomatoes_score="90%",
-            ),
         )
 
         response = await engine.recommendation_from_suggestion(
@@ -450,9 +454,7 @@ class LLMFirstRecommendationTests(unittest.IsolatedAsyncioTestCase):
             "https://www.netflix.com/search?q=Cinema+Paradiso",
         )
         self.assertEqual(response.reason, "A warm Italian classic.")
-        self.assertIsNotNone(response.movie_details)
-        assert response.movie_details is not None
-        self.assertEqual(response.movie_details.imdb_rating, "8.5/10")
+        self.assertIsNone(response.movie_details)
 
 
 if __name__ == "__main__":

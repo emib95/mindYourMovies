@@ -92,6 +92,10 @@ async def create_recommendation(
             recommendation_request
         )
         if llm_first_response is not None:
+            llm_first_response = await _with_optional_movie_details(
+                recommendation_request,
+                llm_first_response,
+            )
             trace.finish(
                 "ok",
                 path_used="llm_first",
@@ -101,6 +105,10 @@ async def create_recommendation(
             return llm_first_response
 
         response = await _tmdb_first_recommendation(recommendation_request)
+        response = await _with_optional_movie_details(
+            recommendation_request,
+            response,
+        )
         trace.finish(
             "ok",
             path_used="tmdb_first",
@@ -236,6 +244,48 @@ async def _tmdb_first_recommendation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+async def _with_optional_movie_details(
+    recommendation_request: RecommendationRequest,
+    response: RecommendationResponse,
+) -> RecommendationResponse:
+    if response.movie_details is not None:
+        return response
+
+    trace = get_trace()
+    try:
+        details = await asyncio.wait_for(
+            recommendation_engine.movie_details_for_recommendation(
+                recommendation_request,
+                response,
+            ),
+            timeout=min(8.0, settings.llm_first_timeout_seconds),
+        )
+    except asyncio.TimeoutError:
+        if trace is not None:
+            trace.event(
+                "openai_movie_details_lookup",
+                "failed",
+                movie_title=response.movie_title,
+                reason="timeout",
+            )
+        return response
+    except Exception as exc:
+        if trace is not None:
+            trace.event(
+                "openai_movie_details_lookup",
+                "failed",
+                movie_title=response.movie_title,
+                reason=type(exc).__name__,
+                error=str(exc),
+            )
+        return response
+
+    if details is None:
+        return response
+
+    return response.model_copy(update={"movie_details": details})
+
+
 def _null_stage():
     from contextlib import nullcontext
 
@@ -254,7 +304,6 @@ def _suggestion_with_verified_title(
         watch_link=suggestion.watch_link,
         reason=suggestion.reason,
         why_recommended=suggestion.why_recommended,
-        movie_details=suggestion.movie_details,
     )
 
 

@@ -87,11 +87,11 @@ AVAILABILITY_REGION_GUIDANCE = (
 )
 
 MOVIE_DETAILS_GUIDANCE = (
-    "When reliable details are available from web search, include movie_details "
-    "with a short spoiler-free intro, two to five notable actors, the IMDb "
-    "rating, and the Rotten Tomatoes score. Use null for unknown text fields "
-    "and an empty actors list when cast is not verified. Do not invent ratings, "
-    "scores, or actors."
+    "Use web search to find reliable classic movie details for the already "
+    "selected movie. Include a short spoiler-free intro, two to five notable "
+    "actors, the IMDb rating, and the Rotten Tomatoes score. Use null for "
+    "unknown text fields and an empty actors list when cast is not verified. "
+    "Do not invent ratings, scores, or actors."
 )
 
 NULLABLE_STRING_SCHEMA = {
@@ -130,12 +130,6 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
         "watch_link": {"type": "string"},
         "reason": {"type": "string"},
         "why_recommended": {"type": "string"},
-        "movie_details": {
-            "anyOf": [
-                MOVIE_DETAILS_RESPONSE_SCHEMA,
-                {"type": "null"},
-            ],
-        },
     },
     "required": [
         "movie_title",
@@ -143,7 +137,6 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
         "watch_link",
         "reason",
         "why_recommended",
-        "movie_details",
     ],
 }
 
@@ -166,7 +159,6 @@ class LLMRecommendationSuggestion:
     watch_link: str
     reason: str
     why_recommended: str
-    movie_details: MovieDetails | None = None
 
 
 class RecommendationEngine:
@@ -275,7 +267,6 @@ class RecommendationEngine:
                 watch_link=self._clean_text(payload.get("watch_link")),
                 reason=self._clean_text(payload.get("reason")),
                 why_recommended=self._clean_text(payload.get("why_recommended")),
-                movie_details=self._movie_details(payload.get("movie_details")),
             )
         ]
         if trace is not None:
@@ -427,7 +418,6 @@ class RecommendationEngine:
             tmdb_id=selected.tmdb_id,
             region=self._region(recommendation_request),
             language=recommendation_request.language,
-            movie_details=self._movie_details(llm_payload.get("movie_details")),
         )
 
     async def recommendation_from_suggestion(
@@ -459,8 +449,114 @@ class RecommendationEngine:
             tmdb_id=selected.tmdb_id,
             region=self._region(recommendation_request),
             language=recommendation_request.language,
-            movie_details=suggestion.movie_details,
         )
+
+    async def movie_details_for_recommendation(
+        self,
+        recommendation_request: RecommendationRequest,
+        recommendation: RecommendationResponse,
+    ) -> MovieDetails | None:
+        if not self.settings.openai_api_key:
+            return None
+
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "openai_movie_details_lookup",
+                movie_title=recommendation.movie_title,
+                tmdb_id=recommendation.tmdb_id,
+                model=self.settings.openai_model,
+            )
+            if trace
+            else nullcontext({})
+        )
+
+        client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        try:
+            with stage as details:
+                response = await client.responses.create(
+                    model=self.settings.openai_model,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": self._movie_details_system_prompt(
+                                recommendation_request
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "movie_title": recommendation.movie_title,
+                                    "tmdb_id": recommendation.tmdb_id,
+                                    "response_language": LANGUAGE_LABELS[
+                                        recommendation_request.language
+                                    ],
+                                }
+                            ),
+                        },
+                    ],
+                    tools=[
+                        {
+                            "type": "web_search",
+                            "search_context_size": "medium",
+                            "user_location": {
+                                "type": "approximate",
+                                "country": self._region(recommendation_request),
+                            },
+                        }
+                    ],
+                    tool_choice="required",
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "movie_details",
+                            "schema": MOVIE_DETAILS_RESPONSE_SCHEMA,
+                            "strict": True,
+                        }
+                    },
+                )
+                details["openai_response_received"] = True
+        except OpenAIError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_movie_details_lookup",
+                    "failed",
+                    movie_title=recommendation.movie_title,
+                    reason="openai_error",
+                    error=str(exc),
+                )
+            return None
+
+        content = self._response_text(response)
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_movie_details_lookup",
+                    "failed",
+                    movie_title=recommendation.movie_title,
+                    reason="invalid_json",
+                    error=str(exc),
+                    raw_content_preview=content[:200],
+                )
+            return None
+
+        movie_details = self._movie_details(payload)
+        if trace is not None:
+            trace.event(
+                "openai_movie_details_lookup_parsed",
+                "ok" if movie_details is not None else "failed",
+                movie_title=recommendation.movie_title,
+                has_intro=bool(movie_details and movie_details.intro),
+                actor_count=len(movie_details.actors) if movie_details else 0,
+                has_imdb_rating=bool(movie_details and movie_details.imdb_rating),
+                has_rotten_tomatoes_score=bool(
+                    movie_details and movie_details.rotten_tomatoes_score
+                ),
+            )
+        return movie_details
 
     def _fallback_recommendation(
         self,
@@ -761,8 +857,7 @@ class RecommendationEngine:
             "the user's extra-cost preference: when false, avoid titles that are "
             "only rent or buy. Do not include excluded titles. Prefer official "
             "provider title URLs for watch_link when you can verify them; use an "
-            "empty string if you cannot find one. "
-            f"{MOVIE_DETAILS_GUIDANCE} Return JSON only."
+            "empty string if you cannot find one. Return JSON only."
         )
 
     def _suggest_movies_user_payload(
@@ -815,15 +910,25 @@ class RecommendationEngine:
             "HBO, or NOW title URL. If a direct title page is not available, use "
             "an official provider search page for the movie title. Do not return "
             "TMDb, JustWatch, Reelgood, IMDb, Rotten Tomatoes, or search engine "
-            "result pages as watch_link. "
-            f"{MOVIE_DETAILS_GUIDANCE} Return JSON only with movie_title, "
-            "provider, watch_link, reason, why_recommended, and movie_details. "
-            "Use reason as a short summary. Use why_recommended to explain in "
-            "one or two sentences why this movie fits the user's mood, group "
-            "context, notes, selected providers, availability, and extra-cost "
-            "preference. Write reason, why_recommended, and movie_details.intro in "
+            "result pages as watch_link. Return JSON only with movie_title, "
+            "provider, watch_link, reason, and why_recommended. Use reason as a "
+            "short summary. Use why_recommended to explain in one or two "
+            "sentences why this movie fits the user's mood, group context, notes, "
+            "selected providers, availability, and extra-cost preference. Write "
+            "reason and why_recommended in "
             f"{LANGUAGE_LABELS[recommendation_request.language]}. Do not invent "
             "titles or links."
+        )
+
+    def _movie_details_system_prompt(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> str:
+        return (
+            "You enrich an already selected movie recommendation. Do not choose, "
+            "replace, rank, or suggest a different movie. "
+            f"{MOVIE_DETAILS_GUIDANCE} Write intro in "
+            f"{LANGUAGE_LABELS[recommendation_request.language]}. Return JSON only."
         )
 
     def _recommend_user_payload(
