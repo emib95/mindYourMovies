@@ -189,6 +189,12 @@ Response:
   "watch_link": "https://www.netflix.com/title/123456",
   "reason": "This best fits the requested mood.",
   "why_recommended": "It matches the light tone you asked for and is available from one of your selected providers without an extra rental fee.",
-  "tmdb_id": 123
+  "tmdb_id": 123,
+  "movie_details": {
+    "intro": "A short spoiler-free premise for the movie.",
+    "actors": ["Actor One", "Actor Two"],
+    "imdb_rating": "8.1/10",
+    "rotten_tomatoes_score": "93%"
+  }
 }
 ```

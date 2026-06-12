@@ -7,7 +7,7 @@ from openai import AsyncOpenAI, OpenAIError
 
 from app.config import Settings
 from app.recommendation_trace import get_trace
-from app.schemas import MovieCandidate, RecommendationRequest, RecommendationResponse
+from app.schemas import MovieCandidate, MovieDetails, RecommendationRequest, RecommendationResponse
 
 
 LANGUAGE_LABELS = {
@@ -85,6 +85,41 @@ AVAILABILITY_REGION_GUIDANCE = (
     "Only prioritize a country, national cinema, language, or culture when the "
     "user explicitly asks for it."
 )
+
+MOVIE_DETAILS_GUIDANCE = (
+    "Use web search to find reliable classic movie details for the already "
+    "selected movie. Include a short spoiler-free intro, two to five notable "
+    "actors, the IMDb rating, and the Rotten Tomatoes score. Use null for "
+    "unknown text fields and an empty actors list when cast is not verified. "
+    "Do not invent ratings, scores, or actors."
+)
+
+NULLABLE_STRING_SCHEMA = {
+    "anyOf": [
+        {"type": "string"},
+        {"type": "null"},
+    ],
+}
+
+MOVIE_DETAILS_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "intro": NULLABLE_STRING_SCHEMA,
+        "actors": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "imdb_rating": NULLABLE_STRING_SCHEMA,
+        "rotten_tomatoes_score": NULLABLE_STRING_SCHEMA,
+    },
+    "required": [
+        "intro",
+        "actors",
+        "imdb_rating",
+        "rotten_tomatoes_score",
+    ],
+}
 
 RECOMMENDATION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -416,6 +451,113 @@ class RecommendationEngine:
             language=recommendation_request.language,
         )
 
+    async def movie_details_for_recommendation(
+        self,
+        recommendation_request: RecommendationRequest,
+        recommendation: RecommendationResponse,
+    ) -> MovieDetails | None:
+        if not self.settings.openai_api_key:
+            return None
+
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "openai_movie_details_lookup",
+                movie_title=recommendation.movie_title,
+                tmdb_id=recommendation.tmdb_id,
+                model=self.settings.openai_model,
+            )
+            if trace
+            else nullcontext({})
+        )
+
+        client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        try:
+            with stage as details:
+                response = await client.responses.create(
+                    model=self.settings.openai_model,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": self._movie_details_system_prompt(
+                                recommendation_request
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "movie_title": recommendation.movie_title,
+                                    "tmdb_id": recommendation.tmdb_id,
+                                    "response_language": LANGUAGE_LABELS[
+                                        recommendation_request.language
+                                    ],
+                                }
+                            ),
+                        },
+                    ],
+                    tools=[
+                        {
+                            "type": "web_search",
+                            "search_context_size": "medium",
+                            "user_location": {
+                                "type": "approximate",
+                                "country": self._region(recommendation_request),
+                            },
+                        }
+                    ],
+                    tool_choice="required",
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "movie_details",
+                            "schema": MOVIE_DETAILS_RESPONSE_SCHEMA,
+                            "strict": True,
+                        }
+                    },
+                )
+                details["openai_response_received"] = True
+        except OpenAIError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_movie_details_lookup",
+                    "failed",
+                    movie_title=recommendation.movie_title,
+                    reason="openai_error",
+                    error=str(exc),
+                )
+            return None
+
+        content = self._response_text(response)
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            if trace is not None:
+                trace.event(
+                    "openai_movie_details_lookup",
+                    "failed",
+                    movie_title=recommendation.movie_title,
+                    reason="invalid_json",
+                    error=str(exc),
+                    raw_content_preview=content[:200],
+                )
+            return None
+
+        movie_details = self._movie_details(payload)
+        if trace is not None:
+            trace.event(
+                "openai_movie_details_lookup_parsed",
+                "ok" if movie_details is not None else "failed",
+                movie_title=recommendation.movie_title,
+                has_intro=bool(movie_details and movie_details.intro),
+                actor_count=len(movie_details.actors) if movie_details else 0,
+                has_imdb_rating=bool(movie_details and movie_details.imdb_rating),
+                has_rotten_tomatoes_score=bool(
+                    movie_details and movie_details.rotten_tomatoes_score
+                ),
+            )
+        return movie_details
+
     def _fallback_recommendation(
         self,
         recommendation_request: RecommendationRequest,
@@ -484,6 +626,40 @@ class RecommendationEngine:
         if value is None:
             return ""
         return str(value).strip()
+
+    def _movie_details(self, value: object) -> MovieDetails | None:
+        if not isinstance(value, dict):
+            return None
+
+        intro = self._clean_text(value.get("intro")) or None
+        imdb_rating = self._clean_text(value.get("imdb_rating")) or None
+        rotten_tomatoes_score = (
+            self._clean_text(value.get("rotten_tomatoes_score")) or None
+        )
+        actors = self._clean_actor_names(value.get("actors"))
+
+        if not any([intro, actors, imdb_rating, rotten_tomatoes_score]):
+            return None
+
+        return MovieDetails(
+            intro=intro,
+            actors=actors,
+            imdb_rating=imdb_rating,
+            rotten_tomatoes_score=rotten_tomatoes_score,
+        )
+
+    def _clean_actor_names(self, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+
+        actors: list[str] = []
+        for item in value:
+            actor = self._clean_text(item)
+            if actor and actor not in actors:
+                actors.append(actor)
+            if len(actors) >= 8:
+                break
+        return actors
 
     def _watch_link(self, value: object, candidate: MovieCandidate) -> str:
         link = self._clean_text(value)
@@ -742,6 +918,17 @@ class RecommendationEngine:
             "reason and why_recommended in "
             f"{LANGUAGE_LABELS[recommendation_request.language]}. Do not invent "
             "titles or links."
+        )
+
+    def _movie_details_system_prompt(
+        self,
+        recommendation_request: RecommendationRequest,
+    ) -> str:
+        return (
+            "You enrich an already selected movie recommendation. Do not choose, "
+            "replace, rank, or suggest a different movie. "
+            f"{MOVIE_DETAILS_GUIDANCE} Write intro in "
+            f"{LANGUAGE_LABELS[recommendation_request.language]}. Return JSON only."
         )
 
     def _recommend_user_payload(

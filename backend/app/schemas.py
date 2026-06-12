@@ -112,6 +112,26 @@ class MovieCandidate(BaseModel):
     watch_link: HttpUrl
 
 
+class MovieDetails(BaseModel):
+    intro: str | None = Field(
+        default=None,
+        description="Short spoiler-free movie introduction or premise.",
+    )
+    actors: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Notable actors in the movie.",
+    )
+    imdb_rating: str | None = Field(
+        default=None,
+        description="IMDb rating in its original display format, such as 8.5/10.",
+    )
+    rotten_tomatoes_score: str | None = Field(
+        default=None,
+        description="Rotten Tomatoes score in its original display format, such as 93%.",
+    )
+
+
 class RecommendationResponse(BaseModel):
     movie_title: str
     provider: str
@@ -121,6 +141,7 @@ class RecommendationResponse(BaseModel):
     tmdb_id: int | None = None
     region: str
     language: Literal["en", "es"]
+    movie_details: MovieDetails | None = None
 
 
 class LocationResponse(BaseModel):
