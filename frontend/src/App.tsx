@@ -147,7 +147,7 @@ const translations = {
     submit: 'Recommend one movie',
     pick: "Tonight's pick",
     movieDetails: 'Movie details',
-    intro: 'Intro',
+    movieIntro: 'Intro',
     cast: 'Cast',
     ratings: {
       imdb: 'IMDb',
@@ -234,7 +234,7 @@ const translations = {
     submit: 'Recomendar una película',
     pick: 'La elección de hoy',
     movieDetails: 'Detalles de la película',
-    intro: 'Introducción',
+    movieIntro: 'Introducción',
     cast: 'Reparto',
     ratings: {
       imdb: 'IMDb',
@@ -779,7 +779,7 @@ function App() {
                 <h3 id="movie-details-title">{t.movieDetails}</h3>
                 {movieDetails.intro ? (
                   <div className="movie-detail-section">
-                    <h4>{t.intro}</h4>
+                    <h4>{t.movieIntro}</h4>
                     <p>{movieDetails.intro}</p>
                   </div>
                 ) : null}
