@@ -8,6 +8,17 @@ import { apiBaseUrl, creatorPhotoUrl, donationUrl } from './config'
 import { countryNameFor, regionCodes } from './countries'
 
 type ProviderId = 'netflix' | 'disney' | 'prime' | 'youtube' | 'hbo'
+type GenreId =
+  | 'comedy'
+  | 'drama'
+  | 'thriller'
+  | 'horror'
+  | 'action'
+  | 'romance'
+  | 'scifi'
+  | 'documentary'
+  | 'animation'
+type GroupOptionId = 'me' | 'friends' | 'family' | 'date' | 'other'
 type Language = 'en' | 'es'
 type LocationStatus = 'detecting' | 'detected' | 'default' | 'error' | 'manual'
 
@@ -39,6 +50,26 @@ const providers: Array<{ id: ProviderId; label: string }> = [
   { id: 'prime', label: 'Prime Video' },
   { id: 'youtube', label: 'YouTube' },
   { id: 'hbo', label: 'HBO / NOW' },
+]
+
+const genreOptionIds: GenreId[] = [
+  'comedy',
+  'drama',
+  'thriller',
+  'horror',
+  'action',
+  'romance',
+  'scifi',
+  'documentary',
+  'animation',
+]
+
+const groupOptionIds: GroupOptionId[] = [
+  'me',
+  'friends',
+  'family',
+  'date',
+  'other',
 ]
 
 const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
@@ -76,13 +107,31 @@ const translations = {
     paidOption: 'I am willing to pay extra for rentals or purchases.',
     paidOptionHelp:
       'When unchecked, results exclude paid rent/buy options such as many YouTube movies.',
-    moodLabel: 'What do you feel like watching?',
-    moodPlaceholder:
-      'Funny, tense thriller, comfort movie, visually stunning...',
-    groupLabel: 'Who is watching?',
-    groupPlaceholder: 'Date night, family, friends who cannot agree...',
-    notesLabel: 'Optional comment',
-    notesPlaceholder: 'Avoid horror, under two hours, no subtitles tonight...',
+    genreLegend: 'What do you feel like watching?',
+    genreOptions: {
+      comedy: 'Comedy',
+      drama: 'Drama',
+      thriller: 'Thriller',
+      horror: 'Horror',
+      action: 'Action',
+      romance: 'Romance',
+      scifi: 'Sci-Fi',
+      documentary: 'Documentary',
+      animation: 'Animation',
+    },
+    groupLegend: 'Who is watching?',
+    groupOptions: {
+      me: 'Me',
+      friends: 'Friends',
+      family: 'Family',
+      date: 'Date',
+      other: 'Other',
+    },
+    groupOtherLabel: 'Tell us more',
+    groupOtherPlaceholder: 'Coworkers, roommates, a big group, kids...',
+    notesLabel: 'Give us more to work with (optional)',
+    notesPlaceholder:
+      'The more context you give, the better the recommendation you get. Try a favourite director, an actor, a niche theme, a movie from the 70s...',
     loading: 'Rolling...',
     loadingTitle: 'Spooling up the projector',
     loadingDetail:
@@ -138,13 +187,31 @@ const translations = {
     paidOption: 'Estoy dispuesto a pagar extra por alquileres o compras.',
     paidOptionHelp:
       'Si no está marcada, se excluyen opciones de alquiler/compra como muchas películas de YouTube.',
-    moodLabel: '¿Qué te apetece ver?',
-    moodPlaceholder:
-      'Comedia, thriller tenso, película reconfortante, algo visual...',
-    groupLabel: '¿Quién va a ver la película?',
-    groupPlaceholder: 'Cita, familia, amigos que no se ponen de acuerdo...',
-    notesLabel: 'Comentario opcional',
-    notesPlaceholder: 'Evitar terror, menos de dos horas, sin subtítulos hoy...',
+    genreLegend: '¿Qué te apetece ver?',
+    genreOptions: {
+      comedy: 'Comedia',
+      drama: 'Drama',
+      thriller: 'Thriller',
+      horror: 'Terror',
+      action: 'Acción',
+      romance: 'Romance',
+      scifi: 'Ciencia ficción',
+      documentary: 'Documental',
+      animation: 'Animación',
+    },
+    groupLegend: '¿Quién va a ver la película?',
+    groupOptions: {
+      me: 'Yo',
+      friends: 'Amigos',
+      family: 'Familia',
+      date: 'Cita',
+      other: 'Otro',
+    },
+    groupOtherLabel: 'Cuéntanos más',
+    groupOtherPlaceholder: 'Compañeros de piso, trabajo, un grupo grande...',
+    notesLabel: 'Danos más pistas (opcional)',
+    notesPlaceholder:
+      'Cuanto más contexto nos dés, mejor será la recomendación. Prueba con un director o actor favorito, un tema poco habitual, una película de los 70...',
     loading: 'Rodando...',
     loadingTitle: 'Preparando el proyector',
     loadingDetail:
@@ -238,8 +305,9 @@ function App() {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>(
     isStaticUkRoute ? 'manual' : 'detecting',
   )
-  const [mood, setMood] = useState('')
-  const [groupContext, setGroupContext] = useState('')
+  const [genreSelections, setGenreSelections] = useState<GenreId[]>([])
+  const [groupSelection, setGroupSelection] = useState<GroupOptionId>('me')
+  const [groupOtherText, setGroupOtherText] = useState('')
   const [notes, setNotes] = useState('')
   const [allowExtraCosts, setAllowExtraCosts] = useState(false)
   const [recommendation, setRecommendation] = useState<Recommendation | null>(
@@ -327,10 +395,10 @@ function App() {
   const canSubmit = useMemo(
     () =>
       selectedProviders.length > 0 &&
-      mood.trim().length > 1 &&
+      genreSelections.length > 0 &&
       /^[A-Z]{2}$/.test(region) &&
       !isLoading,
-    [isLoading, mood, region, selectedProviders.length],
+    [genreSelections.length, isLoading, region, selectedProviders.length],
   )
 
   const regionOptions = useMemo(() => {
@@ -370,6 +438,27 @@ function App() {
         : [...currentProviders, providerId],
     )
   }
+
+  const toggleGenre = (genreId: GenreId) => {
+    setGenreSelections((currentGenres) =>
+      currentGenres.includes(genreId)
+        ? currentGenres.filter((currentGenre) => currentGenre !== genreId)
+        : [...currentGenres, genreId],
+    )
+  }
+
+  const genreSummary = useMemo(
+    () => genreSelections.map((genreId) => t.genreOptions[genreId]).join(', '),
+    [genreSelections, t],
+  )
+
+  const groupContext = useMemo(
+    () =>
+      groupSelection === 'other'
+        ? groupOtherText.trim()
+        : t.groupOptions[groupSelection],
+    [groupOtherText, groupSelection, t],
+  )
 
   const selectRegion = (newRegion: string) => {
     hasManualRegion.current = true
@@ -412,7 +501,7 @@ function App() {
         },
         body: JSON.stringify({
           providers: selectedProviders,
-          mood,
+          mood: genreSummary,
           region,
           language,
           allow_extra_costs: allowExtraCosts,
@@ -553,24 +642,49 @@ function App() {
             </span>
           </label>
 
-          <label className="field">
-            <span>{t.moodLabel}</span>
-            <input
-              onChange={(event) => setMood(event.target.value)}
-              placeholder={t.moodPlaceholder}
-              required
-              value={mood}
-            />
-          </label>
+          <fieldset>
+            <legend>{t.genreLegend}</legend>
+            <div className="provider-grid">
+              {genreOptionIds.map((genreId) => (
+                <label className="provider-card" key={genreId}>
+                  <input
+                    checked={genreSelections.includes(genreId)}
+                    onChange={() => toggleGenre(genreId)}
+                    type="checkbox"
+                  />
+                  <span>{t.genreOptions[genreId]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-          <label className="field">
-            <span>{t.groupLabel}</span>
-            <input
-              onChange={(event) => setGroupContext(event.target.value)}
-              placeholder={t.groupPlaceholder}
-              value={groupContext}
-            />
-          </label>
+          <fieldset>
+            <legend>{t.groupLegend}</legend>
+            <div className="provider-grid group-grid">
+              {groupOptionIds.map((optionId) => (
+                <label className="provider-card" key={optionId}>
+                  <input
+                    checked={groupSelection === optionId}
+                    name="group"
+                    onChange={() => setGroupSelection(optionId)}
+                    type="radio"
+                  />
+                  <span>{t.groupOptions[optionId]}</span>
+                </label>
+              ))}
+            </div>
+
+            {groupSelection === 'other' ? (
+              <label className="field group-other-field">
+                <span>{t.groupOtherLabel}</span>
+                <input
+                  onChange={(event) => setGroupOtherText(event.target.value)}
+                  placeholder={t.groupOtherPlaceholder}
+                  value={groupOtherText}
+                />
+              </label>
+            ) : null}
+          </fieldset>
 
           <label className="field">
             <span>{t.notesLabel}</span>
