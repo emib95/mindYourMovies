@@ -178,6 +178,11 @@ const languageFromPath = (pathname = window.location.pathname): Language => {
     : 'en'
 }
 
+const isUkRoute = (pathname = window.location.pathname): boolean => {
+  const normalizedPath = pathname.toLowerCase().replace(/\/+$/, '') || '/'
+  return normalizedPath === '/uk' || normalizedPath.startsWith('/uk/')
+}
+
 const updateLanguageRoute = (
   newLanguage: Language,
   mode: 'push' | 'replace' = 'push',
@@ -222,13 +227,15 @@ const appendExcludedRecommendation = (
 
 function App() {
   const initialRouteLanguage = languageFromPath()
+  const [isStaticUkRoute] = useState(() => isUkRoute())
   const [selectedProviders, setSelectedProviders] = useState<ProviderId[]>([
     'netflix',
   ])
   const [language, setLanguage] = useState<Language>(initialRouteLanguage)
   const [region, setRegion] = useState('GB')
-  const [locationStatus, setLocationStatus] =
-    useState<LocationStatus>('detecting')
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(
+    isStaticUkRoute ? 'manual' : 'detecting',
+  )
   const [mood, setMood] = useState('')
   const [groupContext, setGroupContext] = useState('')
   const [notes, setNotes] = useState('')
@@ -244,7 +251,7 @@ function App() {
   const [showCreatorPhoto, setShowCreatorPhoto] = useState(
     Boolean(creatorPhotoUrl),
   )
-  const hasManualRegion = useRef(false)
+  const hasManualRegion = useRef(isStaticUkRoute)
   const hasManualLanguage = useRef(initialRouteLanguage === 'es')
   const t = translations[language]
 
@@ -265,6 +272,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (isStaticUkRoute) {
+      return
+    }
+
     let isMounted = true
 
     const detectLocation = async () => {
@@ -309,7 +320,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [isStaticUkRoute])
 
   const canSubmit = useMemo(
     () =>
