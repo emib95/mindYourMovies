@@ -176,7 +176,7 @@ const translations = {
   },
   es: {
     appAlt: 'Mind the Movie',
-    poweredBy: 'Con la tecnología de OpenAI',
+    poweredBy: 'Con tecnología de OpenAI',
     languageSwitcherLabel: 'Elegir idioma',
     title: 'Deja de buscar. Elige una película.',
     intro:
