@@ -469,8 +469,20 @@ function App() {
               value: movieDetails.rotten_tomatoes_score,
             },
           ].filter(
-            (rating): rating is { label: string; value: string } =>
-              typeof rating.value === 'string' && rating.value.trim().length > 0,
+            (rating): rating is { label: string; value: string } => {
+              if (typeof rating.value !== 'string' || rating.value.trim().length === 0) {
+                return false
+              }
+              const numericValue = Number.parseFloat(rating.value)
+              if (!Number.isFinite(numericValue)) {
+                return false
+              }
+              // Only surface ratings that are actually good. IMDb is on a /10
+              // scale, Rotten Tomatoes is a percentage, so they need different
+              // thresholds.
+              const isPercentage = rating.value.includes('%')
+              return isPercentage ? numericValue >= 70 : numericValue >= 7
+            },
           )
         : [],
     [movieDetails, t],
@@ -794,20 +806,18 @@ function App() {
             {hasMovieDetails && movieDetails ? (
               <section className="movie-details" aria-labelledby="movie-details-title">
                 <h3 id="movie-details-title">{t.movieDetails}</h3>
-                {movieDetails.intro ? (
-                  <div className="movie-detail-section">
-                    <h4>{t.movieIntro}</h4>
-                    <p>{movieDetails.intro}</p>
-                  </div>
-                ) : null}
                 {movieDetails.actors?.length ? (
                   <div className="movie-detail-section">
-                    <h4>{t.cast}</h4>
                     <ul className="actor-list">
                       {movieDetails.actors.map((actor) => (
                         <li key={actor}>{actor}</li>
                       ))}
                     </ul>
+                  </div>
+                ) : null}
+                {movieDetails.intro ? (
+                  <div className="movie-detail-section">
+                    <p>{movieDetails.intro}</p>
                   </div>
                 ) : null}
                 {movieRatings.length ? (
