@@ -419,10 +419,9 @@ function App() {
   const canSubmit = useMemo(
     () =>
       selectedProviders.length > 0 &&
-      genreSelections.length > 0 &&
       /^[A-Z]{2}$/.test(region) &&
       !isLoading,
-    [genreSelections.length, isLoading, region, selectedProviders.length],
+    [isLoading, region, selectedProviders.length],
   )
 
   const regionOptions = useMemo(() => {
@@ -719,22 +718,6 @@ function App() {
           </label>
 
           <fieldset>
-            <legend>{t.genreLegend}</legend>
-            <div className="provider-grid">
-              {genreOptionIds.map((genreId) => (
-                <label className="provider-card" key={genreId}>
-                  <input
-                    checked={genreSelections.includes(genreId)}
-                    onChange={() => toggleGenre(genreId)}
-                    type="checkbox"
-                  />
-                  <span>{t.genreOptions[genreId]}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset>
             <legend>{t.groupLegend}</legend>
             <div className="provider-grid group-grid">
               {groupOptionIds.map((optionId) => (
@@ -760,6 +743,22 @@ function App() {
                 />
               </label>
             ) : null}
+          </fieldset>
+
+          <fieldset>
+            <legend>{t.genreLegend}</legend>
+            <div className="provider-grid genre-grid">
+              {genreOptionIds.map((genreId) => (
+                <label className="provider-card" key={genreId}>
+                  <input
+                    checked={genreSelections.includes(genreId)}
+                    onChange={() => toggleGenre(genreId)}
+                    type="checkbox"
+                  />
+                  <span>{t.genreOptions[genreId]}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
 
           <label className="field">

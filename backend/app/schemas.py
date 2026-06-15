@@ -14,7 +14,7 @@ class Provider(str, Enum):
 
 class RecommendationRequest(BaseModel):
     providers: list[Provider] = Field(..., min_length=1)
-    mood: str = Field(..., min_length=2, max_length=240)
+    mood: str = Field(default="", max_length=240)
     region: str | None = Field(
         default=None,
         min_length=2,
@@ -50,6 +50,13 @@ class RecommendationRequest(BaseModel):
         max_length=25,
         description="Movie titles that should not be recommended again.",
     )
+
+    @field_validator("mood", mode="before")
+    @classmethod
+    def normalize_mood(cls, value: str | None) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
     @field_validator("region", mode="before")
     @classmethod
