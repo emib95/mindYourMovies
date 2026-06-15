@@ -781,6 +781,12 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  /* Genre labels are short, so keep two compact columns on phones to
+     avoid a very long single-column list of nine options. */
+  .genre-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .loading-recommendation {
     align-items: flex-start;
     flex-direction: column;
