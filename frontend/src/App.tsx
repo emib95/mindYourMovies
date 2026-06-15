@@ -88,6 +88,7 @@ const languageOptions: Array<{ id: Language; flag: string; path: string }> = [
 const translations = {
   en: {
     appAlt: 'Mind the Movie',
+    poweredBy: 'Powered by OpenAI',
     languageSwitcherLabel: 'Choose language',
     title: 'Stop scrolling. Pick one movie.',
     intro:
@@ -175,6 +176,7 @@ const translations = {
   },
   es: {
     appAlt: 'Mind the Movie',
+    poweredBy: 'Con la tecnología de OpenAI',
     languageSwitcherLabel: 'Elegir idioma',
     title: 'Deja de buscar. Elige una película.',
     intro:
@@ -643,6 +645,21 @@ function App() {
             ))}
           </select>
         </label>
+
+        <span className="powered-by-badge">
+          <svg
+            aria-hidden="true"
+            className="powered-by-icon"
+            focusable="false"
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z"
+              fill="currentColor"
+            />
+          </svg>
+          <span className="powered-by-text">{t.poweredBy}</span>
+        </span>
       </div>
 
       <section className="hero">
