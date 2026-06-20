@@ -168,17 +168,29 @@ stored in the frontend or backend.
 or purchases. Set it to `true` to include rent/buy options such as many YouTube
 movies.
 
-The backend first asks OpenAI with web search for one movie that matches the
-prompt and should be available in the selected country/providers, then verifies
-that title against TMDb watch availability before returning it. If the suggested
-title does not verify, the backend requests another single-title attempt up to
-the configured batch limit. If the OpenAI-first path fails or exceeds the timeout, the backend
-falls back to the original TMDb-first workflow: it searches for explicit
+The backend uses a **single combined web search** to keep OpenAI costs low. One
+high-context web search asks OpenAI for several ranked movies at once
+(`recommendation_batch_size`, default 3) that match the prompt and should be
+available in the selected country/providers. Each returned movie already
+includes its watch link and its details (intro, cast, IMDb rating, Rotten
+Tomatoes score), so choosing the movie, finding the link, and gathering ratings
+no longer cost three separate searches.
+
+The batch is **cached aggressively** (`recommendation_cache_*`, keyed on the
+providers, region, language, extra-cost preference, and prompt text). The
+"recommend a different movie" flow and later similar searches are served from
+the cached batch without another web search; a fresh search only runs when the
+cache misses or every cached title has been excluded.
+
+Before a recommendation is exposed to the frontend, each title is verified
+against TMDb watch availability and its watch link is **validated** with an HTTP
+request. If a title's link is dead, the next movie in the batch is used; if every
+verified title has a dead link, the best one is returned with an official
+provider search page. If the OpenAI-first path fails or exceeds the timeout, the
+backend falls back to the original TMDb-first workflow: it searches for explicit
 title/reference requests, expands from TMDb similar/recommended movies, uses
 classic-aware discovery when the prompt asks for cinema classics or masterpieces,
-and sends up to 60 ranked candidates to the LLM. OpenAI web search is also used
-to find an official provider deep link, or an official provider search page when
-a title page is not available.
+and sends up to 60 ranked candidates to the LLM.
 
 Response:
 

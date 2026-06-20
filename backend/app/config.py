@@ -21,6 +21,20 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4-mini"
     llm_first_timeout_seconds: float = 60.0
     llm_first_max_batches: int = 3
+    # Single combined web search tuning. One web search now selects the movie,
+    # its watch link, and its details for several ranked titles at once, so the
+    # context size is raised and the batch holds enough alternatives to cover
+    # the "I've already watched that" flow without another search.
+    web_search_context_size: str = "high"
+    recommendation_batch_size: int = 3
+    # Aggressive caching of the combined web-search results. Similar future
+    # searches and the "recommend a different movie" flow are served from the
+    # cached batch instead of paying for another web search.
+    recommendation_cache_ttl_seconds: float = 86400.0
+    recommendation_cache_max_entries: int = 512
+    # Watch-link validation runs before a recommendation is exposed to the
+    # frontend. If a title's link is dead, the next movie in the batch is used.
+    watch_link_validation_timeout_seconds: float = 5.0
 
     model_config = SettingsConfigDict(
         env_file=".env",
