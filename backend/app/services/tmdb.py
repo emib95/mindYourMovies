@@ -41,6 +41,59 @@ LANGUAGE_LOCALES = {
     "es": "es-ES",
 }
 
+# Standard TMDb movie genres, exposed to the agent so it can drive
+# /discover/movie with `with_genres` / `without_genres` by name.
+GENRE_NAME_TO_ID: dict[str, int] = {
+    "action": 28,
+    "adventure": 12,
+    "animation": 16,
+    "comedy": 35,
+    "crime": 80,
+    "documentary": 99,
+    "drama": 18,
+    "family": 10751,
+    "fantasy": 14,
+    "history": 36,
+    "horror": 27,
+    "music": 10402,
+    "mystery": 9648,
+    "romance": 10749,
+    "science fiction": 878,
+    "sci-fi": 878,
+    "tv movie": 10770,
+    "thriller": 53,
+    "war": 10752,
+    "western": 37,
+}
+GENRE_ID_TO_NAME: dict[int, str] = {
+    28: "Action",
+    12: "Adventure",
+    16: "Animation",
+    35: "Comedy",
+    80: "Crime",
+    99: "Documentary",
+    18: "Drama",
+    10751: "Family",
+    14: "Fantasy",
+    36: "History",
+    27: "Horror",
+    10402: "Music",
+    9648: "Mystery",
+    10749: "Romance",
+    878: "Science Fiction",
+    10770: "TV Movie",
+    53: "Thriller",
+    10752: "War",
+    37: "Western",
+}
+AGENT_DISCOVER_SORT_OPTIONS = (
+    "popularity.desc",
+    "vote_average.desc",
+    "vote_count.desc",
+    "primary_release_date.desc",
+    "revenue.desc",
+)
+
 CLASSIC_RELEASE_DATE_CUTOFF = "2000-12-31"
 MIN_CLASSIC_VOTE_COUNT = 1000
 MAX_REFERENCE_QUERIES = 3
@@ -363,6 +416,292 @@ class TMDbClient:
             details["mode"] = "tmdb"
             details["candidate_count"] = len(ranked_candidates)
             return ranked_candidates
+
+    # ------------------------------------------------------------------
+    # Agent-facing TMDb tools.
+    #
+    # These return trimmed, JSON-serialisable payloads suitable for feeding
+    # straight back to an LLM, and each one logs its request parameters and a
+    # response summary through the recommendation tracer so the agent's API
+    # usage (and latency) is fully observable.
+    # ------------------------------------------------------------------
+
+    async def agent_search_movies(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        query: str,
+        year: int | None = None,
+        page: int = 1,
+    ) -> dict[str, object]:
+        region = self._region(recommendation_request)
+        language = self._language(recommendation_request, region)
+        params: dict[str, object] = {
+            "include_adult": "false",
+            "language": language,
+            "query": query,
+            "page": max(1, min(int(page or 1), 5)),
+        }
+        if year:
+            params["primary_release_year"] = int(year)
+
+        trace = get_trace()
+        stage = (
+            trace.stage("tmdb_api_call", tool="search_movies", query=query, year=year)
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            payload = await self._get_json(client, "/search/movie", params)
+            results = [
+                self._agent_movie_summary(movie)
+                for movie in payload.get("results", [])
+                if movie.get("id")
+            ]
+            details["result_count"] = len(results)
+            details["top_titles"] = [movie["title"] for movie in results[:5]]
+            return {
+                "query": query,
+                "total_results": payload.get("total_results", len(results)),
+                "results": results[:10],
+            }
+
+    async def agent_discover_movies(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        *,
+        genres: list[str] | None = None,
+        exclude_genres: list[str] | None = None,
+        sort_by: str = "popularity.desc",
+        min_vote_average: float | None = None,
+        min_vote_count: int | None = None,
+        release_date_gte: str | None = None,
+        release_date_lte: str | None = None,
+        original_language: str | None = None,
+        runtime_gte: int | None = None,
+        runtime_lte: int | None = None,
+        only_available: bool = True,
+        page: int = 1,
+    ) -> dict[str, object]:
+        region = self._region(recommendation_request)
+        language = self._language(recommendation_request, region)
+        provider_ids = self._provider_ids(recommendation_request.providers)
+
+        if sort_by not in AGENT_DISCOVER_SORT_OPTIONS:
+            sort_by = "popularity.desc"
+
+        params: dict[str, object] = {
+            "include_adult": "false",
+            "include_video": "false",
+            "language": language,
+            "sort_by": sort_by,
+            "page": max(1, min(int(page or 1), 10)),
+            "vote_average.gte": (
+                self.settings.tmdb_min_vote_average
+                if min_vote_average is None
+                else float(min_vote_average)
+            ),
+            "vote_count.gte": (
+                self.settings.tmdb_min_vote_count
+                if min_vote_count is None
+                else int(min_vote_count)
+            ),
+        }
+        if only_available:
+            params["watch_region"] = region
+            params["with_watch_providers"] = "|".join(
+                str(provider_id) for provider_id in provider_ids
+            )
+            params["with_watch_monetization_types"] = self._monetization_types(
+                recommendation_request
+            )
+        if genres:
+            params["with_genres"] = ",".join(self._genre_ids(genres))
+        if exclude_genres:
+            params["without_genres"] = ",".join(self._genre_ids(exclude_genres))
+        if release_date_gte:
+            params["primary_release_date.gte"] = release_date_gte
+        if release_date_lte:
+            params["primary_release_date.lte"] = release_date_lte
+        if original_language:
+            params["with_original_language"] = original_language
+        if runtime_gte:
+            params["with_runtime.gte"] = int(runtime_gte)
+        if runtime_lte:
+            params["with_runtime.lte"] = int(runtime_lte)
+
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "tmdb_api_call",
+                tool="discover_movies",
+                sort_by=sort_by,
+                genres=genres,
+                only_available=only_available,
+            )
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            payload = await self._get_json(client, "/discover/movie", params)
+            results = [
+                self._agent_movie_summary(movie)
+                for movie in payload.get("results", [])
+                if movie.get("id")
+            ]
+            details["result_count"] = len(results)
+            details["top_titles"] = [movie["title"] for movie in results[:5]]
+            return {
+                "filters": {
+                    "genres": genres,
+                    "exclude_genres": exclude_genres,
+                    "sort_by": sort_by,
+                    "min_vote_average": params["vote_average.gte"],
+                    "min_vote_count": params["vote_count.gte"],
+                    "release_date_gte": release_date_gte,
+                    "release_date_lte": release_date_lte,
+                    "original_language": original_language,
+                    "only_available": only_available,
+                },
+                "total_results": payload.get("total_results", len(results)),
+                "results": results[:15],
+            }
+
+    async def agent_movie_details(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        tmdb_id: int,
+    ) -> dict[str, object]:
+        region = self._region(recommendation_request)
+        language = self._language(recommendation_request, region)
+
+        trace = get_trace()
+        stage = (
+            trace.stage("tmdb_api_call", tool="movie_details", tmdb_id=tmdb_id)
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            payload = await self._get_json(
+                client,
+                f"/movie/{tmdb_id}",
+                {
+                    "language": language,
+                    "append_to_response": "credits,keywords",
+                },
+            )
+            summary = self._agent_movie_detail_summary(payload)
+            details["title"] = summary.get("title")
+            details["vote_average"] = summary.get("vote_average")
+            details["vote_count"] = summary.get("vote_count")
+            return summary
+
+    async def agent_watch_availability(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        tmdb_id: int,
+    ) -> dict[str, object]:
+        region = self._region(recommendation_request)
+        provider_ids = self._provider_ids(recommendation_request.providers)
+
+        trace = get_trace()
+        stage = (
+            trace.stage(
+                "tmdb_api_call",
+                tool="watch_availability",
+                tmdb_id=tmdb_id,
+                region=region,
+            )
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            provider_names = await self._available_provider_names(
+                client,
+                int(tmdb_id),
+                recommendation_request,
+                region,
+                provider_ids,
+            )
+            available = bool(provider_names)
+            details["available"] = available
+            details["providers"] = provider_names
+            return {
+                "tmdb_id": tmdb_id,
+                "region": region,
+                "available_on_selected_providers": available,
+                "providers": provider_names,
+                "allow_extra_costs": recommendation_request.allow_extra_costs,
+            }
+
+    def _genre_ids(self, genres: list[str]) -> list[str]:
+        ids: list[str] = []
+        for genre in genres:
+            genre_id = GENRE_NAME_TO_ID.get(genre.strip().lower())
+            if genre_id is not None and str(genre_id) not in ids:
+                ids.append(str(genre_id))
+        return ids
+
+    def _agent_movie_summary(self, movie: dict) -> dict[str, object]:
+        return {
+            "tmdb_id": movie.get("id"),
+            "title": movie.get("title") or movie.get("original_title") or "Unknown title",
+            "original_title": movie.get("original_title"),
+            "release_date": movie.get("release_date") or None,
+            "vote_average": movie.get("vote_average"),
+            "vote_count": movie.get("vote_count"),
+            "popularity": movie.get("popularity"),
+            "original_language": movie.get("original_language"),
+            "genres": [
+                GENRE_ID_TO_NAME[genre_id]
+                for genre_id in movie.get("genre_ids", [])
+                if genre_id in GENRE_ID_TO_NAME
+            ],
+            "overview": (movie.get("overview") or "")[:400],
+        }
+
+    def _agent_movie_detail_summary(self, movie: dict) -> dict[str, object]:
+        credits = movie.get("credits") or {}
+        cast = [
+            person.get("name")
+            for person in (credits.get("cast") or [])[:8]
+            if person.get("name")
+        ]
+        directors = [
+            person.get("name")
+            for person in (credits.get("crew") or [])
+            if person.get("job") == "Director" and person.get("name")
+        ]
+        keywords = [
+            keyword.get("name")
+            for keyword in ((movie.get("keywords") or {}).get("keywords") or [])[:15]
+            if keyword.get("name")
+        ]
+        return {
+            "tmdb_id": movie.get("id"),
+            "title": movie.get("title") or movie.get("original_title") or "Unknown title",
+            "original_title": movie.get("original_title"),
+            "tagline": movie.get("tagline") or None,
+            "overview": movie.get("overview") or None,
+            "release_date": movie.get("release_date") or None,
+            "runtime": movie.get("runtime"),
+            "status": movie.get("status"),
+            "original_language": movie.get("original_language"),
+            "vote_average": movie.get("vote_average"),
+            "vote_count": movie.get("vote_count"),
+            "popularity": movie.get("popularity"),
+            "genres": [
+                genre.get("name")
+                for genre in (movie.get("genres") or [])
+                if genre.get("name")
+            ],
+            "directors": directors,
+            "cast": cast,
+            "keywords": keywords,
+        }
 
     async def _reference_candidates(
         self,
