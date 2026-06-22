@@ -327,6 +327,9 @@ class MovieRecommendationAgent:
             {"role": "user", "content": json.dumps(self._user_payload(recommendation_request))},
         ]
         details_cache: dict[int, dict] = {}
+        # tmdb_ids the agent confirmed available, in the order it found them, so
+        # we can still recommend a verified match if it runs out of iterations.
+        available_candidates: list[int] = []
         nudges = 0
 
         for iteration in range(1, self.settings.agent_max_iterations + 1):
@@ -389,6 +392,7 @@ class MovieRecommendationAgent:
                         "output": output,
                     }
                 )
+                self._track_available_candidate(call, output, available_candidates)
                 if final is not None:
                     if trace is not None:
                         trace.event(
@@ -400,6 +404,27 @@ class MovieRecommendationAgent:
                         )
                     return final
 
+        # Out of iterations without an explicit finalize. Rather than fail, fall
+        # back to the best title we already confirmed available, so a strong
+        # on-providers match is never wasted.
+        fallback = await self._finalize_best_available(
+            available_candidates,
+            recommendation_request,
+            http_client,
+            details_cache,
+        )
+        if fallback is not None:
+            if trace is not None:
+                trace.event(
+                    "agent_loop",
+                    "ok",
+                    reason="max_iterations_autofinalize",
+                    iteration=self.settings.agent_max_iterations,
+                    movie_title=fallback.movie_title,
+                    tmdb_id=fallback.tmdb_id,
+                )
+            return fallback
+
         if trace is not None:
             trace.event(
                 "agent_loop",
@@ -407,6 +432,55 @@ class MovieRecommendationAgent:
                 reason="max_iterations_reached",
                 max_iterations=self.settings.agent_max_iterations,
             )
+        return None
+
+    @staticmethod
+    def _track_available_candidate(
+        call: object,
+        output: str,
+        available_candidates: list[int],
+    ) -> None:
+        if (getattr(call, "name", "") or "") != "check_availability":
+            return
+        try:
+            result = json.loads(output)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(result, dict) or not result.get(
+            "available_on_selected_providers"
+        ):
+            return
+        tmdb_id = result.get("tmdb_id")
+        if isinstance(tmdb_id, int) and tmdb_id not in available_candidates:
+            available_candidates.append(tmdb_id)
+
+    async def _finalize_best_available(
+        self,
+        available_candidates: list[int],
+        recommendation_request: RecommendationRequest,
+        http_client: httpx.AsyncClient,
+        details_cache: dict[int, dict],
+    ) -> RecommendationResponse | None:
+        # Prefer the highest-rated confirmed-available title we have details for,
+        # otherwise keep the order the agent discovered them in.
+        def sort_key(tmdb_id: int) -> float:
+            details = details_cache.get(tmdb_id) or {}
+            try:
+                return float(details.get("vote_average") or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        for tmdb_id in sorted(available_candidates, key=sort_key, reverse=True):
+            if self._is_excluded(tmdb_id, recommendation_request, details_cache):
+                continue
+            _, response = await self._finalize(
+                {"tmdb_id": tmdb_id},
+                recommendation_request,
+                http_client,
+                details_cache,
+            )
+            if response is not None:
+                return response
         return None
 
     async def _call_model(

@@ -140,7 +140,33 @@ RECOMMENDATION_RESPONSE_SCHEMA = {
     ],
 }
 
-RECOMMENDATION_SUGGESTION_SCHEMA = RECOMMENDATION_RESPONSE_SCHEMA
+RECOMMENDATION_SUGGESTION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "movie_title": {"type": "string"},
+        "release_year": {
+            "type": "string",
+            "description": (
+                "The four-digit release year of the exact film you mean, so the "
+                "right movie is identified when several share a title. Empty "
+                "string only if genuinely unknown."
+            ),
+        },
+        "provider": {"type": "string"},
+        "watch_link": {"type": "string"},
+        "reason": {"type": "string"},
+        "why_recommended": {"type": "string"},
+    },
+    "required": [
+        "movie_title",
+        "release_year",
+        "provider",
+        "watch_link",
+        "reason",
+        "why_recommended",
+    ],
+}
 
 WATCH_LINK_RESPONSE_SCHEMA = {
     "type": "object",
@@ -159,6 +185,7 @@ class LLMRecommendationSuggestion:
     watch_link: str
     reason: str
     why_recommended: str
+    release_year: str = ""
 
 
 class RecommendationEngine:
@@ -267,6 +294,7 @@ class RecommendationEngine:
                 watch_link=self._clean_text(payload.get("watch_link")),
                 reason=self._clean_text(payload.get("reason")),
                 why_recommended=self._clean_text(payload.get("why_recommended")),
+                release_year=self._clean_text(payload.get("release_year")),
             )
         ]
         if trace is not None:
@@ -857,7 +885,13 @@ class RecommendationEngine:
             "the user's extra-cost preference: when false, avoid titles that are "
             "only rent or buy. Do not include excluded titles. Prefer official "
             "provider title URLs for watch_link when you can verify them; use an "
-            "empty string if you cannot find one. Return JSON only."
+            "empty string if you cannot find one. "
+            "Always set release_year to the four-digit year of the EXACT film you "
+            "mean: many films share a title, so the year is how the right one is "
+            "identified (e.g. Almodovar's 'Bad Education' is 2004, not the 2019 "
+            "or 2015 films of the same name). Make sure movie_title and "
+            "release_year together point at the precise film that matches the "
+            "user's request. Return JSON only."
         )
 
     def _suggest_movies_user_payload(

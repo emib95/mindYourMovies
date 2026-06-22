@@ -254,6 +254,7 @@ async def _llm_first_recommendation(
                 recommendation_request,
                 batch_index=batch_index,
                 suggestion_index=suggestion_index,
+                expected_year=suggestion.release_year,
             )
             if candidate is None:
                 continue

@@ -257,12 +257,15 @@ class TMDbClient:
         recommendation_request: RecommendationRequest,
         batch_index: int | None = None,
         suggestion_index: int | None = None,
+        expected_year: str | None = None,
     ) -> MovieCandidate | None:
         trace = get_trace()
         stage_details = {
             "requested_title": title,
             "region": self._region(recommendation_request),
         }
+        if expected_year:
+            stage_details["expected_year"] = expected_year
         if batch_index is not None:
             stage_details["batch"] = batch_index
         if suggestion_index is not None:
@@ -308,10 +311,14 @@ class TMDbClient:
                         "query": title,
                     },
                 )
-                for movie in self._rank_reference_seeds(
-                    search_payload.get("results", []),
-                    title,
-                )[:5]:
+                ranked_seeds = self._prefer_expected_year(
+                    self._rank_reference_seeds(
+                        search_payload.get("results", []),
+                        title,
+                    ),
+                    expected_year,
+                )
+                for movie in ranked_seeds[:5]:
                     if not self._is_plausible_title_match(movie, title):
                         continue
                     movie_id = movie.get("id")
@@ -1201,6 +1208,35 @@ class TMDbClient:
             )
 
         return sorted(movies, key=score, reverse=True)
+
+    def _prefer_expected_year(
+        self,
+        movies: list[dict],
+        expected_year: str | None,
+    ) -> list[dict]:
+        """Disambiguate same-titled films using the LLM's expected year.
+
+        When the year is known, drop releases more than a year off so a request
+        for one film (e.g. Almodovar's 2004 "Bad Education") is not satisfied by
+        an unrelated movie of the same name. Falls back to the original ranking
+        if nothing matches the year.
+        """
+        if not expected_year:
+            return movies
+        try:
+            target = int(str(expected_year)[:4])
+        except (TypeError, ValueError):
+            return movies
+
+        def release_year(movie: dict) -> int | None:
+            release_date = str(movie.get("release_date") or "")[:4]
+            return int(release_date) if release_date.isdigit() else None
+
+        year_matches = [
+            movie for movie in movies
+            if (year := release_year(movie)) is not None and abs(year - target) <= 1
+        ]
+        return year_matches or movies
 
     def _is_plausible_title_match(self, movie: dict, query: str) -> bool:
         return self._movie_title_similarity(movie, query) >= (
