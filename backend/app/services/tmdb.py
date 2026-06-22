@@ -495,6 +495,56 @@ class TMDbClient:
                 "results": results[:15],
             }
 
+    async def agent_search_people(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        query: str,
+    ) -> dict[str, object]:
+        region = self._region(recommendation_request)
+        language = self._language(recommendation_request, region)
+        params: dict[str, object] = {
+            "query": query,
+            "language": language,
+            "include_adult": "false",
+        }
+
+        trace = get_trace()
+        stage = (
+            trace.stage("tmdb_api_call", tool="search_people", query=query)
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            payload = await self._get_json(client, "/search/person", params)
+            results = []
+            for person in payload.get("results", []):
+                if not person.get("id"):
+                    continue
+                known_for = [
+                    movie.get("title") or movie.get("name")
+                    for movie in person.get("known_for", [])
+                    if movie.get("title") or movie.get("name")
+                ]
+                results.append(
+                    {
+                        "id": person["id"],
+                        "name": person.get("name", ""),
+                        "known_for_department": person.get("known_for_department", ""),
+                        "known_for": known_for[:4],
+                    }
+                )
+            details["result_count"] = len(results)
+            details["top_people"] = [
+                f"{person['name']} ({', '.join(person['known_for'])})"
+                for person in results[:3]
+            ]
+            return {
+                "query": query,
+                "total_results": payload.get("total_results", len(results)),
+                "results": results[:8],
+            }
+
     async def agent_discover_movies(
         self,
         client: httpx.AsyncClient,
@@ -510,6 +560,7 @@ class TMDbClient:
         original_language: str | None = None,
         origin_country: str | None = None,
         keywords: list[int] | None = None,
+        people: list[int] | None = None,
         runtime_gte: int | None = None,
         runtime_lte: int | None = None,
         only_available: bool = True,
@@ -562,6 +613,10 @@ class TMDbClient:
         if keywords:
             params["with_keywords"] = ",".join(
                 str(int(keyword_id)) for keyword_id in keywords
+            )
+        if people:
+            params["with_people"] = ",".join(
+                str(int(person_id)) for person_id in people
             )
         if runtime_gte:
             params["with_runtime.gte"] = int(runtime_gte)

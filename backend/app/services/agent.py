@@ -99,6 +99,31 @@ def _agent_tools() -> list[dict]:
         },
         {
             "type": "function",
+            "name": "search_people",
+            "description": (
+                "Resolve a person's name (actor, actress, or director the user "
+                "mentions) to TMDb person IDs. Use this FIRST whenever the notes "
+                "name a person, then pass the chosen id(s) to discover_movies via "
+                "its 'people' argument to find their films pre-filtered to the "
+                "user's providers. Each result includes known_for titles and "
+                "known_for_department — use these to pick the RIGHT person when "
+                "several share a name, and prefer the one whose known work and "
+                "department match what the user means."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Person's name to look up, e.g. 'Christopher Nolan'.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "type": "function",
             "name": "discover_movies",
             "description": (
                 "Discover movies on TMDb by genre, quality, era, language and "
@@ -177,6 +202,16 @@ def _agent_tools() -> list[dict]:
                             "search_keywords. Use this for topic/theme/subject "
                             "requests (e.g. football, heists, time travel) so "
                             "results stay pre-filtered to available titles."
+                        ),
+                    },
+                    "people": {
+                        "type": ["array", "null"],
+                        "items": {"type": "integer"},
+                        "description": (
+                            "TMDb person IDs (cast or crew) from search_people. "
+                            "Use this to find films featuring or directed by an "
+                            "actor, actress, or director the user named, "
+                            "pre-filtered to available titles."
                         ),
                     },
                     "runtime_gte": {"type": ["integer", "null"], "description": "Min runtime (mins)."},
@@ -460,6 +495,14 @@ class MovieRecommendationAgent:
                 )
                 return json.dumps(result), None
 
+            if name == "search_people":
+                result = await self.tmdb.agent_search_people(
+                    http_client,
+                    recommendation_request,
+                    query=str(arguments.get("query", "")).strip(),
+                )
+                return json.dumps(result), None
+
             if name == "discover_movies":
                 result = await self.tmdb.agent_discover_movies(
                     http_client,
@@ -474,6 +517,7 @@ class MovieRecommendationAgent:
                     original_language=arguments.get("original_language"),
                     origin_country=arguments.get("origin_country"),
                     keywords=arguments.get("keywords"),
+                    people=arguments.get("people"),
                     runtime_gte=arguments.get("runtime_gte"),
                     runtime_lte=arguments.get("runtime_lte"),
                     page=arguments.get("page") or 1,
@@ -688,11 +732,16 @@ class MovieRecommendationAgent:
             "topic, theme or subject in the notes/mood (e.g. football, heists, "
             "time travel, true stories), FIRST call search_keywords to get the "
             "keyword id, then call discover_movies with that id in 'keywords'. "
-            "Use search_movies ONLY when the user names a specific title — its "
-            "results are NOT availability-filtered, so do not use it to explore a "
-            "theme (that is what caused dead-ends on unavailable films). Exploit "
-            "discover filters (genres, keywords, origin_country, vote average, "
-            "vote count, release dates, original language, runtime, sort). "
+            "When the notes name a PERSON (actor, actress, or director), FIRST "
+            "call search_people, pick the right person using their known_for "
+            "titles and department, then call discover_movies with that id in "
+            "'people' — never hunt for someone's filmography by guessing titles "
+            "with search_movies. Use search_movies ONLY when the user names a "
+            "specific film title — its results are NOT availability-filtered, so "
+            "do not use it to explore a theme or a person (that is what caused "
+            "dead-ends on unavailable films). Exploit discover filters (genres, "
+            "keywords, people, origin_country, vote average, vote count, release "
+            "dates, original language, runtime, sort). "
             "IMPORTANT: if mood and notes are empty or absent, the user has "
             "expressed NO preferences. Make ONE broad discover_movies call with no "
             "genre, language, era, or theme filters, then pick the strongest "
