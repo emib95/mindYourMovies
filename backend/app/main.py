@@ -8,10 +8,12 @@ from httpx import HTTPError
 from app.config import get_settings
 from app.recommendation_trace import clear_trace, get_trace, start_trace
 from app.schemas import LocationResponse, RecommendationRequest, RecommendationResponse
+from app.services.agent import MovieRecommendationAgent
 from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.location import LocationResolver
 from app.services.tmdb import TMDbClient
+from app.services.watchmode import WatchmodeClient
 
 
 settings = get_settings()
@@ -35,6 +37,12 @@ app.add_middleware(
 tmdb_client = TMDbClient(settings)
 recommendation_engine = RecommendationEngine(settings)
 location_resolver = LocationResolver(settings)
+watchmode_client = WatchmodeClient(settings)
+recommendation_agent = MovieRecommendationAgent(
+    settings,
+    tmdb_client,
+    watchmode_client,
+)
 
 
 @app.get("/")
@@ -88,6 +96,20 @@ async def create_recommendation(
                 details["region"] = location.region
                 details["source"] = location.source
 
+        agent_response = await _try_agent_recommendation(recommendation_request)
+        if agent_response is not None:
+            agent_response = await _with_optional_movie_details(
+                recommendation_request,
+                agent_response,
+            )
+            trace.finish(
+                "ok",
+                path_used="agent",
+                movie_title=agent_response.movie_title,
+                tmdb_id=agent_response.tmdb_id,
+            )
+            return agent_response
+
         llm_first_response = await _try_llm_first_recommendation(
             recommendation_request
         )
@@ -124,6 +146,46 @@ async def create_recommendation(
         raise
     finally:
         clear_trace()
+
+
+async def _try_agent_recommendation(
+    recommendation_request: RecommendationRequest,
+) -> RecommendationResponse | None:
+    trace = get_trace()
+    if not settings.agent_enabled:
+        if trace is not None:
+            trace.event("agent_path", "skipped", reason="agent_disabled")
+        return None
+    if not settings.openai_api_key:
+        if trace is not None:
+            trace.event("agent_path", "skipped", reason="missing_openai_api_key")
+        return None
+
+    try:
+        with trace.stage(
+            "agent_path",
+            timeout_seconds=settings.agent_timeout_seconds,
+        ) if trace else _null_stage() as details:
+            result = await asyncio.wait_for(
+                recommendation_agent.recommend(recommendation_request),
+                timeout=settings.agent_timeout_seconds,
+            )
+            if trace is not None:
+                details["result"] = "matched" if result is not None else "no_match"
+            return result
+    except asyncio.TimeoutError:
+        if trace is not None:
+            trace.event(
+                "agent_path",
+                "failed",
+                reason="timeout",
+                timeout_seconds=settings.agent_timeout_seconds,
+            )
+        return None
+    except (HTTPError, ValueError) as exc:
+        if trace is not None:
+            trace.event("agent_path", "failed", reason=type(exc).__name__, error=str(exc))
+        return None
 
 
 async def _try_llm_first_recommendation(
@@ -192,6 +254,7 @@ async def _llm_first_recommendation(
                 recommendation_request,
                 batch_index=batch_index,
                 suggestion_index=suggestion_index,
+                expected_year=suggestion.release_year,
             )
             if candidate is None:
                 continue

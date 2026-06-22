@@ -22,6 +22,25 @@ class Settings(BaseSettings):
     llm_first_timeout_seconds: float = 60.0
     llm_first_max_batches: int = 3
 
+    # Watchmode is used purely to turn a verified TMDb movie into a regional
+    # streaming deep link, replacing the web-search watch-link lookup.
+    watchmode_api_key: str | None = None
+    watchmode_base_url: str = "https://api.watchmode.com/v1"
+
+    # Agentic, API-only recommendation loop. The agent drives TMDb search and
+    # discovery tools, evaluates the results itself, and only finalises a movie
+    # once it is a strong, available match. No web search is used on this path.
+    agent_enabled: bool = True
+    agent_model: str = "gpt-5.5"
+    agent_timeout_seconds: float = 90.0
+    agent_max_iterations: int = 14
+    # Baseline quality guidance handed to the agent. It is a soft preference,
+    # not a hard gate: the agent may go higher for open-ended requests and is
+    # told to relax these for light, fun, or niche/theme-specific requests so
+    # well-known available titles are not filtered out.
+    agent_min_vote_average: float = 6.0
+    agent_min_vote_count: int = 200
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -9,8 +9,10 @@ recommendation with a watch link.
 
 - Frontend: React, TypeScript, Vite
 - Backend: Python, FastAPI, httpx
-- Data source: TMDb watch-provider data for the UK (`TMDB_REGION=GB`)
-- AI selection: OpenAI Responses API with web search via the `openai` Python SDK
+- Data source: TMDb (search, discovery, details, watch providers) + Watchmode
+  for regional streaming deep links
+- AI selection: an API-only OpenAI tool-calling agent that drives TMDb itself
+  (with a web-search LLM flow as fallback) via the `openai` Python SDK
 
 ## Project structure
 

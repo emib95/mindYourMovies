@@ -1,8 +1,11 @@
 # MindYourMovies backend
 
-FastAPI backend that asks an LLM for availability-aware movie ideas, verifies them
-against TMDb watch availability, and falls back to the original TMDb-first
-candidate flow when needed.
+FastAPI backend that recommends one movie to watch now. The default path is an
+**API-only agent**: an LLM drives a small toolbox over the TMDb API, evaluates
+the results itself, and only finalises a movie once it is a strong, available
+match — then asks Watchmode for a regional streaming deep link. If the agent is
+disabled or fails, the backend falls back to the previous web-search LLM-first
+flow and finally to the TMDb-first candidate flow.
 
 ## Setup
 
@@ -20,13 +23,37 @@ The server starts on `http://localhost:8000`.
 
 Secrets go in `.env` (see `.env.example`):
 
-- `TMDB_API_KEY`: TMDb key for `/discover/movie`.
-- `OPENAI_API_KEY`: optional for local development; without it, a deterministic
-  demo recommendation is returned.
+- `TMDB_API_KEY`: TMDb key for search, discovery, details, and watch providers.
+- `OPENAI_API_KEY`: optional for local development; without it the agent and
+  LLM paths are skipped and a deterministic demo recommendation is returned.
+- `WATCHMODE_API_KEY`: optional; enables regional streaming deep links on the
+  agentic path. Without it the agent falls back to a provider search link.
 
 All other settings are defaults in `app/config.py` (region, vote thresholds,
 candidate limit, geolocation URL, OpenAI model, LLM-first timeout and batch
-limits, and CORS origins). Change those in git rather than in Railway or `.env`.
+limits, agent toggle/model/timeout/iteration and strictness floors, and CORS
+origins). Change those in git rather than in Railway or `.env`.
+
+## Agentic recommendation path
+
+`MovieRecommendationAgent` (`app/services/agent.py`) runs a tool-calling loop
+against OpenAI with these TMDb-backed tools and no web search:
+
+- `search_movies` — title/keyword search.
+- `discover_movies` — genre, rating, vote-count, era, language, and runtime
+  filters, pre-filtered to titles available on the user's providers/region.
+- `movie_details` — overview, tagline, runtime, genres, cast, director, keywords.
+- `check_availability` — confirms availability on the selected providers.
+- `finalize_recommendation` — locks in one movie; re-verifies availability and
+  rejects excluded or unavailable titles so the agent keeps searching.
+
+The full tool-call transcript is replayed to the model each turn, so it
+remembers every movie and response it has seen. On finalisation the verified
+TMDb id is resolved to a Watchmode deep link for the user's region and providers.
+
+Everything is logged through `RecommendationTracer`: each LLM turn (with token
+usage), each TMDb/Watchmode API call (params, response summary, latency), and an
+end-to-end summary with total latency, LLM/tool call counts, and total tokens.
 
 ## Endpoint
 

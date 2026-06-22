@@ -26,6 +26,28 @@ class RecommendationTracer:
         self.path = path
         self.stages: list[StageRecord] = []
         self.started_at = time.perf_counter()
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.llm_call_count = 0
+        self.tool_call_count = 0
+
+    def record_llm_usage(
+        self,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+    ) -> None:
+        """Accumulate LLM token usage so latency and cost can be inspected."""
+        self.llm_call_count += 1
+        self.input_tokens += max(0, int(input_tokens))
+        self.output_tokens += max(0, int(output_tokens))
+
+    def record_tool_calls(self, count: int = 1) -> None:
+        self.tool_call_count += max(0, int(count))
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
 
     @contextmanager
     def stage(self, name: str, **start_details: Any) -> Iterator[dict[str, Any]]:
@@ -63,11 +85,18 @@ class RecommendationTracer:
     def finish(self, outcome: str, **details: Any) -> None:
         total_ms = (time.perf_counter() - self.started_at) * 1000
         logger.info(
-            "recommendation complete path=%s outcome=%s total_ms=%.1f stage_count=%s details=%s",
+            "recommendation complete path=%s outcome=%s total_ms=%.1f stage_count=%s "
+            "llm_calls=%s tool_calls=%s input_tokens=%s output_tokens=%s total_tokens=%s "
+            "details=%s",
             self.path,
             outcome,
             total_ms,
             len(self.stages),
+            self.llm_call_count,
+            self.tool_call_count,
+            self.input_tokens,
+            self.output_tokens,
+            self.total_tokens,
             details,
         )
         for index, stage in enumerate(self.stages, start=1):
