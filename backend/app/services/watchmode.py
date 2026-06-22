@@ -18,14 +18,20 @@ from app.recommendation_trace import get_trace
 INCLUDED_SOURCE_TYPES = ("sub", "free", "ads", "tve")
 PAID_SOURCE_TYPES = ("rent", "buy")
 
-# Map our provider labels (see tmdb.PROVIDER_CONFIG) to keywords that appear in
-# Watchmode source names, so "Prime Video" matches "Amazon Prime Video", etc.
+# Each entry maps a set of recognisable tokens (that may appear in the provider
+# name we are given, whether it is our own label like "Prime Video" or a TMDb
+# name like "Amazon Prime Video") to the keywords that appear in Watchmode
+# source names. We match by substring in both directions, so the same entry
+# resolves "Prime Video", "Amazon Prime Video", and "Amazon Prime Video with
+# Ads" to the same Watchmode keywords.
 PROVIDER_NAME_KEYWORDS: dict[str, tuple[str, ...]] = {
     "netflix": ("netflix",),
-    "disney+": ("disney",),
-    "prime video": ("prime", "amazon"),
+    "disney": ("disney",),
+    "prime": ("prime", "amazon"),
+    "amazon": ("prime", "amazon"),
     "youtube": ("youtube",),
-    "hbo / now": ("hbo", "max", "now"),
+    "hbo": ("hbo", "max"),
+    "max": ("hbo", "max"),
 }
 
 
@@ -152,11 +158,12 @@ class WatchmodeClient:
         if allow_extra_costs:
             allowed_types.update(PAID_SOURCE_TYPES)
 
-        keyword_groups = [
-            keyword
-            for provider in provider_names
-            for keyword in PROVIDER_NAME_KEYWORDS.get(provider.strip().lower(), ())
-        ]
+        match_keywords = self._match_keywords(provider_names)
+        # Fail closed: if we cannot recognise any of the selected providers we
+        # must not return an arbitrary source. Returning None lets the caller
+        # fall back to a provider search link that points at the right service.
+        if not match_keywords:
+            return None
 
         best: WatchmodeDeeplink | None = None
         for source in sources:
@@ -167,9 +174,7 @@ class WatchmodeClient:
                 continue
             source_name = source.get("name") or ""
             normalized_name = source_name.lower()
-            if keyword_groups and not any(
-                keyword in normalized_name for keyword in keyword_groups
-            ):
+            if not any(keyword in normalized_name for keyword in match_keywords):
                 continue
             web_url = source.get("web_url")
             if not web_url:
@@ -182,6 +187,24 @@ class WatchmodeClient:
             best = best or deeplink
 
         return best
+
+    @staticmethod
+    def _match_keywords(provider_names: list[str]) -> list[str]:
+        """Resolve provider names to Watchmode source-name keywords.
+
+        Works whether the name is one of our labels ("Prime Video") or a TMDb
+        name ("Amazon Prime Video", "Disney Plus"), by checking each known token
+        as a substring of the provider name.
+        """
+        keywords: list[str] = []
+        for provider in provider_names:
+            normalized = provider.strip().lower()
+            if not normalized:
+                continue
+            for token, synonyms in PROVIDER_NAME_KEYWORDS.items():
+                if token in normalized:
+                    keywords.extend(synonyms)
+        return list(dict.fromkeys(keywords))
 
     async def _get_json(
         self,

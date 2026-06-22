@@ -466,6 +466,35 @@ class TMDbClient:
                 "results": results[:10],
             }
 
+    async def agent_search_keywords(
+        self,
+        client: httpx.AsyncClient,
+        recommendation_request: RecommendationRequest,
+        query: str,
+    ) -> dict[str, object]:
+        params: dict[str, object] = {"query": query}
+
+        trace = get_trace()
+        stage = (
+            trace.stage("tmdb_api_call", tool="search_keywords", query=query)
+            if trace
+            else nullcontext({})
+        )
+        with stage as details:
+            payload = await self._get_json(client, "/search/keyword", params)
+            results = [
+                {"id": keyword["id"], "name": keyword.get("name", "")}
+                for keyword in payload.get("results", [])
+                if keyword.get("id")
+            ]
+            details["result_count"] = len(results)
+            details["top_keywords"] = [keyword["name"] for keyword in results[:5]]
+            return {
+                "query": query,
+                "total_results": payload.get("total_results", len(results)),
+                "results": results[:15],
+            }
+
     async def agent_discover_movies(
         self,
         client: httpx.AsyncClient,
@@ -479,6 +508,8 @@ class TMDbClient:
         release_date_gte: str | None = None,
         release_date_lte: str | None = None,
         original_language: str | None = None,
+        origin_country: str | None = None,
+        keywords: list[int] | None = None,
         runtime_gte: int | None = None,
         runtime_lte: int | None = None,
         only_available: bool = True,
@@ -526,6 +557,12 @@ class TMDbClient:
             params["primary_release_date.lte"] = release_date_lte
         if original_language:
             params["with_original_language"] = original_language
+        if origin_country:
+            params["with_origin_country"] = origin_country.upper()
+        if keywords:
+            params["with_keywords"] = ",".join(
+                str(int(keyword_id)) for keyword_id in keywords
+            )
         if runtime_gte:
             params["with_runtime.gte"] = int(runtime_gte)
         if runtime_lte:

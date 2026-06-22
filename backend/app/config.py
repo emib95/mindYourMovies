@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # discovery tools, evaluates the results itself, and only finalises a movie
     # once it is a strong, available match. No web search is used on this path.
     agent_enabled: bool = True
-    agent_model: str = "gpt-5.4-mini"
+    agent_model: str = "gpt-5.5"
     agent_timeout_seconds: float = 90.0
     agent_max_iterations: int = 14
     # Strictness guidance handed to the agent. The agent may go higher than

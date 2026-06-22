@@ -55,8 +55,10 @@ def _agent_tools() -> list[dict]:
             "type": "function",
             "name": "search_movies",
             "description": (
-                "Search TMDb for movies by title or keywords. Use this when the "
-                "user names a specific film, a franchise, or a distinctive phrase."
+                "Search TMDb for movies by title. Use this ONLY when the user "
+                "names a specific film, a franchise, or a distinctive phrase. "
+                "Results are NOT pre-filtered by availability, so prefer "
+                "discover_movies for theme/topic requests."
             ),
             "parameters": {
                 "type": "object",
@@ -68,6 +70,29 @@ def _agent_tools() -> list[dict]:
                         "description": "Optional primary release year filter.",
                     },
                     "page": {"type": ["integer", "null"], "description": "Results page (1-5)."},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "search_keywords",
+            "description": (
+                "Resolve a topic or theme phrase (e.g. 'football', 'time travel', "
+                "'heist', 'based on a true story') to TMDb keyword IDs. Use this "
+                "FIRST for any topic/theme/subject request, then pass the best "
+                "keyword id(s) to discover_movies via its 'keywords' argument so "
+                "results are pre-filtered to titles available on the user's "
+                "providers. This avoids suggesting unavailable films."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Topic or theme phrase to look up, e.g. 'football'.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -118,7 +143,33 @@ def _agent_tools() -> list[dict]:
                     },
                     "original_language": {
                         "type": ["string", "null"],
-                        "description": "ISO 639-1 code, e.g. 'it' for Italian cinema.",
+                        "description": (
+                            "ISO 639-1 language code, e.g. 'it' for Italian-"
+                            "language films. Filters by SPOKEN LANGUAGE, not "
+                            "country. Do NOT use this for a country/region of "
+                            "origin (e.g. African, Korean, Nigerian cinema) — "
+                            "use origin_country for that, since those films are "
+                            "made in many languages."
+                        ),
+                    },
+                    "origin_country": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "ISO 3166-1 country code, e.g. 'NG' Nigeria, 'ZA' "
+                            "South Africa, 'KR' South Korea, 'FR' France. Filters "
+                            "by the movie's country of origin. Use this for "
+                            "requests about films from a country or region."
+                        ),
+                    },
+                    "keywords": {
+                        "type": ["array", "null"],
+                        "items": {"type": "integer"},
+                        "description": (
+                            "TMDb keyword IDs the movie must match, from "
+                            "search_keywords. Use this for topic/theme/subject "
+                            "requests (e.g. football, heists, time travel) so "
+                            "results stay pre-filtered to available titles."
+                        ),
                     },
                     "runtime_gte": {"type": ["integer", "null"], "description": "Min runtime (mins)."},
                     "runtime_lte": {"type": ["integer", "null"], "description": "Max runtime (mins)."},
@@ -393,6 +444,14 @@ class MovieRecommendationAgent:
                 )
                 return json.dumps(result), None
 
+            if name == "search_keywords":
+                result = await self.tmdb.agent_search_keywords(
+                    http_client,
+                    recommendation_request,
+                    query=str(arguments.get("query", "")).strip(),
+                )
+                return json.dumps(result), None
+
             if name == "discover_movies":
                 result = await self.tmdb.agent_discover_movies(
                     http_client,
@@ -405,6 +464,8 @@ class MovieRecommendationAgent:
                     release_date_gte=arguments.get("release_date_gte"),
                     release_date_lte=arguments.get("release_date_lte"),
                     original_language=arguments.get("original_language"),
+                    origin_country=arguments.get("origin_country"),
+                    keywords=arguments.get("keywords"),
                     runtime_gte=arguments.get("runtime_gte"),
                     runtime_lte=arguments.get("runtime_lte"),
                     page=arguments.get("page") or 1,
@@ -614,10 +675,22 @@ class MovieRecommendationAgent:
             "Process:\n"
             "1. Read every user signal: mood, who is watching, notes, language, "
             "and any named titles or references.\n"
-            "2. Plan TMDb calls. Use search_movies for named titles and "
-            "discover_movies for taste-based requests. Exploit all useful filters "
-            "(genres, vote average, vote count, release dates, original language, "
-            "runtime, sort order).\n"
+            "2. Plan TMDb calls. discover_movies is your primary tool because it "
+            "pre-filters to titles AVAILABLE on the user's providers. For a "
+            "topic, theme or subject in the notes/mood (e.g. football, heists, "
+            "time travel, true stories), FIRST call search_keywords to get the "
+            "keyword id, then call discover_movies with that id in 'keywords'. "
+            "Use search_movies ONLY when the user names a specific title — its "
+            "results are NOT availability-filtered, so do not use it to explore a "
+            "theme (that is what caused dead-ends on unavailable films). Exploit "
+            "discover filters (genres, keywords, origin_country, vote average, "
+            "vote count, release dates, original language, runtime, sort). "
+            "IMPORTANT: if mood and notes are empty or absent, the user has "
+            "expressed NO preferences. Make ONE broad discover_movies call with no "
+            "genre, language, era, or theme filters, then pick the strongest "
+            "well-rated title from those results and finalise it. Do NOT run "
+            "additional searches with invented filters; doing so wastes turns "
+            "chasing preferences the user never gave.\n"
             "3. Inspect promising candidates with movie_details to judge true fit "
             "from overview, genres, cast, director, keywords and runtime.\n"
             "4. Be STRICT on quality. Never finalise a movie weaker than "
