@@ -127,11 +127,19 @@ def _agent_tools() -> list[dict]:
                     },
                     "min_vote_average": {
                         "type": ["number", "null"],
-                        "description": "Minimum TMDb rating (0-10). Be strict.",
+                        "description": (
+                            "Minimum TMDb rating (0-10). Lower it (to ~5.0) for "
+                            "light, fun or niche/theme requests so popular "
+                            "on-theme titles are not filtered out."
+                        ),
                     },
                     "min_vote_count": {
                         "type": ["integer", "null"],
-                        "description": "Minimum number of votes. Be strict.",
+                        "description": (
+                            "Minimum number of votes. Lower it (to ~50) for "
+                            "niche themes so available titles are not filtered "
+                            "out."
+                        ),
                     },
                     "release_date_gte": {
                         "type": ["string", "null"],
@@ -693,11 +701,18 @@ class MovieRecommendationAgent:
             "chasing preferences the user never gave.\n"
             "3. Inspect promising candidates with movie_details to judge true fit "
             "from overview, genres, cast, director, keywords and runtime.\n"
-            "4. Be STRICT on quality. Never finalise a movie weaker than "
-            f"{self.settings.agent_min_vote_average} TMDb rating with at least "
-            f"{self.settings.agent_min_vote_count} votes, and prefer clearly "
-            "higher-rated, well-voted films. If a candidate only partially fits, "
-            "keep searching rather than settling.\n"
+            "4. Quality is a GUIDE, not a hard gate. Around "
+            f"{self.settings.agent_min_vote_average} TMDb rating and "
+            f"{self.settings.agent_min_vote_count} votes is a baseline for "
+            "open-ended requests, where you should prefer better-rated, "
+            "well-voted films. BUT when the user asks for something light, fun, "
+            "silly, festive, comforting, or for a specific theme/subject/sport, "
+            "popularity and a good fit matter more than a high critic score: "
+            "lower min_vote_average (to ~5.0) and min_vote_count (to ~50) so "
+            "well-known, available, on-theme films are not filtered out. Never "
+            "reject a strong, available, on-theme title just because its rating "
+            "is moderate, and do not keep searching once you have a good "
+            "available match.\n"
             "5. When a named title is given as the wanted movie, prefer that exact "
             "title; when it is only a similarity reference (like, similar to, in "
             "the style of), recommend a different, comparable film, never the "

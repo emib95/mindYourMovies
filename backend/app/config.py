@@ -34,10 +34,12 @@ class Settings(BaseSettings):
     agent_model: str = "gpt-5.5"
     agent_timeout_seconds: float = 90.0
     agent_max_iterations: int = 14
-    # Strictness guidance handed to the agent. The agent may go higher than
-    # these, but is told never to finalise a weaker movie than this.
-    agent_min_vote_average: float = 7.0
-    agent_min_vote_count: int = 1000
+    # Baseline quality guidance handed to the agent. It is a soft preference,
+    # not a hard gate: the agent may go higher for open-ended requests and is
+    # told to relax these for light, fun, or niche/theme-specific requests so
+    # well-known available titles are not filtered out.
+    agent_min_vote_average: float = 6.0
+    agent_min_vote_count: int = 200
 
     model_config = SettingsConfigDict(
         env_file=".env",
