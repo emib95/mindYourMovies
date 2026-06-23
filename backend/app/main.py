@@ -1,5 +1,9 @@
 import asyncio
+import json
 import logging
+import re
+import unicodedata
+from dataclasses import replace
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +12,7 @@ from httpx import HTTPError
 from app.config import get_settings
 from app.recommendation_trace import clear_trace, get_trace, start_trace
 from app.schemas import LocationResponse, RecommendationRequest, RecommendationResponse
+from app.services.cache import TTLCache
 from app.services.llm import LLMRecommendationSuggestion
 from app.services.llm import RecommendationEngine
 from app.services.location import LocationResolver
@@ -35,6 +40,14 @@ app.add_middleware(
 tmdb_client = TMDbClient(settings)
 recommendation_engine = RecommendationEngine(settings)
 location_resolver = LocationResolver(settings)
+
+# Aggressive cache of the combined web-search batch keyed on the parts of the
+# request that shape results. The "recommend a different movie" flow and later
+# similar searches reuse the cached batch instead of paying for a web search.
+recommendation_cache: TTLCache[list[LLMRecommendationSuggestion]] = TTLCache(
+    ttl_seconds=settings.recommendation_cache_ttl_seconds,
+    max_entries=settings.recommendation_cache_max_entries,
+)
 
 
 @app.get("/")
@@ -92,10 +105,8 @@ async def create_recommendation(
             recommendation_request
         )
         if llm_first_response is not None:
-            llm_first_response = await _with_optional_movie_details(
-                recommendation_request,
-                llm_first_response,
-            )
+            # The combined web search already returns details, so the LLM-first
+            # path never needs a second search to enrich the recommendation.
             trace.finish(
                 "ok",
                 path_used="llm_first",
@@ -166,9 +177,37 @@ async def _llm_first_recommendation(
     recommendation_request: RecommendationRequest,
 ) -> RecommendationResponse | None:
     trace = get_trace()
-    seen_titles = set(recommendation_request.excluded_movie_titles)
-    batch_count = max(1, settings.llm_first_max_batches)
+    cache_key = _recommendation_cache_key(recommendation_request)
+    excluded_titles = {
+        _normalized_cache_text(title)
+        for title in recommendation_request.excluded_movie_titles
+    }
 
+    # 1) Serve from the cached batch first so "recommend a different movie" and
+    #    similar later searches never trigger another web search.
+    pool = recommendation_cache.get(cache_key) or []
+    cached_result = await _recommendation_from_suggestions(
+        recommendation_request,
+        [s for s in pool if _normalized_cache_text(s.movie_title) not in excluded_titles],
+        batch_index=0,
+    )
+    if cached_result is not None:
+        if trace is not None:
+            trace.event(
+                "recommendation_cache",
+                "hit",
+                cache_key=cache_key,
+                pool_size=len(pool),
+                movie_title=cached_result.movie_title,
+            )
+        return cached_result
+
+    # 2) Cache miss or the cached batch is exhausted: run the single combined
+    #    web search (retried up to llm_first_max_batches for new titles).
+    seen_titles = set(recommendation_request.excluded_movie_titles) | {
+        suggestion.movie_title for suggestion in pool
+    }
+    batch_count = max(1, settings.llm_first_max_batches)
     for batch_index in range(1, batch_count + 1):
         suggestions = await recommendation_engine.suggest_movies(
             recommendation_request,
@@ -183,23 +222,32 @@ async def _llm_first_recommendation(
                     batch=batch_index,
                     reason="no_suggestions_returned",
                 )
-            return None
+            break
 
-        for suggestion_index, suggestion in enumerate(suggestions, start=1):
-            seen_titles.add(suggestion.movie_title)
-            candidate = await tmdb_client.available_candidate_for_title(
-                suggestion.movie_title,
-                recommendation_request,
-                batch_index=batch_index,
-                suggestion_index=suggestion_index,
+        pool = _merge_suggestions(pool, suggestions)
+        recommendation_cache.set(cache_key, pool)
+        if trace is not None:
+            trace.event(
+                "recommendation_cache",
+                "store",
+                cache_key=cache_key,
+                pool_size=len(pool),
+                batch=batch_index,
             )
-            if candidate is None:
-                continue
-            return await recommendation_engine.recommendation_from_suggestion(
-                recommendation_request,
-                _suggestion_with_verified_title(suggestion, candidate.title),
-                candidate,
-            )
+
+        result = await _recommendation_from_suggestions(
+            recommendation_request,
+            [
+                s
+                for s in suggestions
+                if _normalized_cache_text(s.movie_title) not in excluded_titles
+            ],
+            batch_index=batch_index,
+        )
+        if result is not None:
+            return result
+
+        seen_titles |= {suggestion.movie_title for suggestion in suggestions}
 
     if trace is not None:
         trace.event(
@@ -209,6 +257,96 @@ async def _llm_first_recommendation(
             batches_attempted=batch_count,
         )
     return None
+
+
+async def _recommendation_from_suggestions(
+    recommendation_request: RecommendationRequest,
+    suggestions: list[LLMRecommendationSuggestion],
+    batch_index: int,
+) -> RecommendationResponse | None:
+    """Verify, link-validate, and build a response from a batch of suggestions.
+
+    Titles are tried best-first. A title is used only when its watch link is
+    reachable; otherwise the next movie is tried. If every verified title has a
+    dead link, the best one is returned with a provider search link so the user
+    still gets a working way to watch.
+    """
+    verified: list[tuple[LLMRecommendationSuggestion, object]] = []
+    for suggestion_index, suggestion in enumerate(suggestions, start=1):
+        candidate = await tmdb_client.available_candidate_for_title(
+            suggestion.movie_title,
+            recommendation_request,
+            batch_index=batch_index,
+            suggestion_index=suggestion_index,
+        )
+        if candidate is None:
+            continue
+
+        suggestion = _suggestion_with_verified_title(suggestion, candidate.title)
+        watch_link = await recommendation_engine.resolve_watch_link(
+            recommendation_request,
+            suggestion,
+            candidate,
+        )
+        if watch_link is not None:
+            return recommendation_engine.build_recommendation(
+                recommendation_request,
+                suggestion,
+                candidate,
+                watch_link,
+            )
+        verified.append((suggestion, candidate))
+
+    if verified:
+        suggestion, candidate = verified[0]
+        return recommendation_engine.build_recommendation(
+            recommendation_request,
+            suggestion,
+            candidate,
+            recommendation_engine.provider_search_link(candidate),
+        )
+    return None
+
+
+def _merge_suggestions(
+    pool: list[LLMRecommendationSuggestion],
+    fresh: list[LLMRecommendationSuggestion],
+) -> list[LLMRecommendationSuggestion]:
+    merged = list(pool)
+    seen = {_normalized_cache_text(suggestion.movie_title) for suggestion in pool}
+    for suggestion in fresh:
+        key = _normalized_cache_text(suggestion.movie_title)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(suggestion)
+    return merged
+
+
+def _recommendation_cache_key(recommendation_request: RecommendationRequest) -> str:
+    region = recommendation_request.region or settings.tmdb_region.upper()
+    return json.dumps(
+        {
+            "providers": sorted(
+                provider.value for provider in recommendation_request.providers
+            ),
+            "region": region.upper(),
+            "language": recommendation_request.language,
+            "allow_extra_costs": recommendation_request.allow_extra_costs,
+            "mood": _normalized_cache_text(recommendation_request.mood),
+            "group_context": _normalized_cache_text(
+                recommendation_request.group_context or ""
+            ),
+            "notes": _normalized_cache_text(recommendation_request.notes or ""),
+        },
+        sort_keys=True,
+    )
+
+
+def _normalized_cache_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_value.lower()).strip()
 
 
 async def _tmdb_first_recommendation(
@@ -298,13 +436,7 @@ def _suggestion_with_verified_title(
 ) -> LLMRecommendationSuggestion:
     if suggestion.movie_title == verified_title:
         return suggestion
-    return LLMRecommendationSuggestion(
-        movie_title=verified_title,
-        provider=suggestion.provider,
-        watch_link=suggestion.watch_link,
-        reason=suggestion.reason,
-        why_recommended=suggestion.why_recommended,
-    )
+    return replace(suggestion, movie_title=verified_title)
 
 
 def _no_movies_detail(recommendation_request: RecommendationRequest) -> str:
